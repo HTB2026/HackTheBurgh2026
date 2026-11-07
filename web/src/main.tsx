@@ -15,9 +15,20 @@ import './styles/home.css'
 import './styles/case.css'
 import './styles/reveal.css'
 import { App } from './App'
+import { api } from './lib/api'
+import { AuthProvider } from './lib/auth'
 
-createRoot(document.getElementById('root')!).render(
-  <StrictMode>
-    <App />
-  </StrictMode>,
-)
+// Login settings come from the server, so changing them needs no rebuild.
+api
+  .health()
+  .then((h) => h.auth ?? null)
+  .catch(() => null)
+  .then((auth) =>
+    createRoot(document.getElementById('root')!).render(
+      <StrictMode>
+        <AuthProvider config={auth}>
+          <App />
+        </AuthProvider>
+      </StrictMode>,
+    ),
+  )

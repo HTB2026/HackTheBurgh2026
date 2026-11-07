@@ -12,6 +12,7 @@ dependencies = [
     "opencv-python-headless>=5.0.0.93",
     "pillow>=13.0.0",
     "psycopg[binary,pool]>=3.2",
+    "pyjwt[crypto]>=2.10",
     "python-dotenv>=1.2.4",
     "python-multipart>=0.0.33",
     "scipy",

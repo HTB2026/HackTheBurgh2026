@@ -1,3 +1,4 @@
+import { useAuth } from '../lib/auth'
 import { useHealth } from '../lib/health'
 import { Icon } from './ui/ui'
 
@@ -17,6 +18,7 @@ export function Wordmark() {
 
 export function Header({ route }: { route: string }) {
   const { health, offline } = useHealth()
+  const auth = useAuth()
   const nav = [
     { href: '#/', key: 'home', label: 'Cases', icon: 'folder-open', accent: 'blue' },
     { href: '#/examine', key: 'examine', label: 'Examine', icon: 'magnifying-glass', accent: 'red' },
@@ -58,6 +60,25 @@ export function Header({ route }: { route: string }) {
               <i className="status-dot on" /> {health.modules.length} checks ready
             </span>
           )}
+          {auth.enabled &&
+            !auth.loading &&
+            (auth.user ? (
+              <button
+                className="status-pill c-blue auth-btn"
+                onClick={auth.logout}
+                data-tip={`Logged in as ${auth.user.email ?? auth.user.name}. Click to log out.`}
+              >
+                <Icon name="right-from-bracket" /> {auth.user.name ?? auth.user.email ?? 'Log out'}
+              </button>
+            ) : (
+              <button
+                className="status-pill c-blue auth-btn"
+                onClick={auth.login}
+                data-tip="Log in to upload, re-run or delete cases. Viewing needs no login."
+              >
+                <Icon name="right-to-bracket" /> Log in
+              </button>
+            ))}
         </div>
       </div>
     </header>

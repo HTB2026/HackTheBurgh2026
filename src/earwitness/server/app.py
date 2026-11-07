@@ -9,6 +9,7 @@ from datetime import datetime
 from datetime import timezone
 from typing import Any
 
+from fastapi import Depends
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import UploadFile
@@ -22,6 +23,7 @@ from pydantic import BaseModel
 
 from earwitness import db
 from earwitness.modules import registry
+from earwitness.server import auth
 from earwitness.server import enhance
 from earwitness.server import report_html
 from earwitness.server.jobs import CaseStore
@@ -93,6 +95,7 @@ async def health() -> dict[str, Any]:
         "ok": True,
         "openai": bool(os.environ.get("OPENAI_API_KEY")),
         "database": await db.health(),
+        "auth": auth.public_config(),
         "modules": [
             {"name": m.name, "title": m.title, "description": m.description}
             for m in registry.all_modules()
@@ -109,9 +112,12 @@ async def list_cases() -> list[dict[str, Any]]:
 
 @app.post("/api/cases")
 async def upload(
-    file: UploadFile, approx_time: str | None = None, search_hours: float | None = None
+    file: UploadFile,
+    approx_time: str | None = None,
+    search_hours: float | None = None,
+    user: auth.User = Depends(auth.require_user),
 ) -> dict[str, Any]:
-    options: dict[str, Any] = {"original_name": file.filename}
+    options: dict[str, Any] = {"original_name": file.filename, "uploaded_by": user.sub}
 
     if approx_time:
         options["approx_time"] = approx_time
@@ -130,14 +136,20 @@ async def upload(
 
 
 @app.post("/api/cases/from-path")
-async def from_path(request: PathCase) -> dict[str, Any]:
+async def from_path(
+    request: PathCase, user: auth.User = Depends(auth.require_user)
+) -> dict[str, Any]:
     """Open a file already on this machine (no upload; handy for big files)."""
     path = os.path.expanduser(request.path)
 
     if not os.path.isfile(path):
         raise HTTPException(400, "file not found")
 
-    options = {"original_name": os.path.basename(path), **request.options}
+    options = {
+        "original_name": os.path.basename(path),
+        **request.options,
+        "uploaded_by": user.sub,
+    }
     # A grid record saved next to the evidence is used automatically.
     sibling = os.path.join(os.path.dirname(path), "grid.csv")
 
@@ -159,7 +171,9 @@ async def get_case(case_id: str) -> dict[str, Any]:
 
 
 @app.delete("/api/cases/{case_id}")
-async def delete_case(case_id: str) -> dict[str, Any]:
+async def delete_case(
+    case_id: str, _: auth.User = Depends(auth.require_user)
+) -> dict[str, Any]:
     deleted = store.delete(case_id)
     await db.delete_case(case_id)
 
@@ -212,7 +226,11 @@ async def grid_minutes(start: str, end: str) -> list[dict[str, Any]]:
 
 
 @app.post("/api/cases/{case_id}/rerun")
-async def rerun(case_id: str, modules: list[str] | None = None) -> dict[str, Any]:
+async def rerun(
+    case_id: str,
+    modules: list[str] | None = None,
+    _: auth.User = Depends(auth.require_user),
+) -> dict[str, Any]:
     case = _case(case_id)
 
     if case.task and not case.task.done():
