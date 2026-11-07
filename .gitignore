@@ -1,0 +1,16 @@
+# secrets and personal data
+.env
+cases/
+# generated
+demo/
+web/dist/
+web/dist-stable/
+web/node_modules/
+.venv/
+__pycache__/
+.pytest_cache/
+.ruff_cache/
+*.pyc
+.DS_Store
+# third-party design references (not ours to redistribute)
+web/reference/

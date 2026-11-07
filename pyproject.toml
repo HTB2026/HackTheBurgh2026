@@ -1,0 +1,42 @@
+[project]
+name = "earwitness"
+version = "0.1.0"
+description = "Date and locate recordings from mains hum and aircraft Doppler shifts."
+requires-python = ">=3.14"
+dependencies = [
+    "fastapi>=0.162.2",
+    "httpx",
+    "matplotlib",
+    "numpy",
+    "openai>=3.46.0",
+    "opencv-python-headless>=5.0.0.93",
+    "pillow>=13.0.0",
+    "python-dotenv>=1.2.4",
+    "python-multipart>=0.0.33",
+    "scipy",
+    "uvicorn[standard]>=0.54.0",
+]
+
+[project.scripts]
+earwitness = "earwitness.cli:main"
+
+[build-system]
+requires = ["uv_build>=0.11,<0.12"]
+build-backend = "uv_build"
+
+[dependency-groups]
+dev = [
+    "pytest>=9.2.0",
+    "ruff",
+]
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "W", "I"]
+# Findings carry long human-readable sentences; the formatter handles code width.
+ignore = ["E501"]
+
+[tool.ruff.lint.isort]
+force-single-line = true

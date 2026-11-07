@@ -1,0 +1,57 @@
+/* Design tokens: charcoal surfaces and a Semantic-UI-ish accent set, plus the dread red. */
+:root {
+  --bg: #1e1e1f;
+  --panel: #212121;
+  --panel-2: #2a2a2b;
+  --header: #1b1c1d;
+  --line: #2e2e2e;
+  --active: rgb(255 255 255 / 0.13);
+  --text: #ededed;
+  --muted: #a3a3a3;
+  --faint: #8a8a8a; /* lifted from #707070 for AA contrast on #212121 */
+  --link: #68adf2;
+  --button: #2185d0;
+  --online: #21ba45;
+
+  --blue-2: #2185d0;
+  --lblue: #00e7ff;
+  --orange: #f2711c;
+  --yellow: #fbbd08;
+  --pink: #e03997;
+  --purple: #a333c8;
+  --green: #21ba45;
+  --red: #db2828;
+  --teal: #00b5ad;
+
+  /* text-safe tints of the accents on charcoal */
+  --red-t: #ff5c5c;
+  --orange-t: #ff9a4d;
+  --green-t: #3fd06a;
+  --purple-t: #c77dea;
+
+  --blood: #8b0f12;
+  --radius: 8px;
+  --wrap: 1180px;
+  --mono: 'JetBrains Mono', ui-monospace, Menlo, monospace;
+}
+
+@media (min-width: 1480px) {
+  :root {
+    --wrap: min(1600px, 82vw);
+  }
+}
+
+.c-blue { --accent: var(--blue-2); }
+.c-lblue { --accent: var(--lblue); }
+.c-orange { --accent: var(--orange); }
+.c-yellow { --accent: var(--yellow); }
+.c-pink { --accent: var(--pink); }
+.c-purple { --accent: var(--purple); }
+.c-green { --accent: var(--green); }
+.c-red { --accent: var(--red); }
+.c-teal { --accent: var(--teal); }
+.c-grey { --accent: var(--muted); }
+
+.c-red-i { color: var(--red); }
+.c-red-t { color: var(--red-t); }
+.c-orange-t { color: var(--orange-t); }
