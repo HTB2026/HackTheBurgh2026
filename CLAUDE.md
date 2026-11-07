@@ -9,6 +9,7 @@ Earwitness is a video and photo forensics suite (HackTheBurgh 2026, G-Research "
 ```sh
 uv sync                                   # Python 3.14; needs ffmpeg (>= 5.1) and tesseract on PATH
 cp .env.example .env                      # TIMESCALE_SERVICE_URL is required; the server refuses to start without it
+                                          # AUTH0_DOMAIN / AUTH0_CLIENT_ID / AUTH0_AUDIENCE enable writes (see Auth below)
 uv run earwitness db migrate              # apply src/earwitness/schema.sql (idempotent; the server also does this)
 uv run earwitness serve                   # http://127.0.0.1:8765, serves web/dist if built
 uv run earwitness demo --out demo         # regenerate the demo pack (videos + demo/photos) and MANIFEST.json
@@ -18,6 +19,7 @@ uv run earwitness demo --out demo         # regenerate the demo pack (videos + d
 uv run ruff check . && uv run ruff format src tests scripts
 uv run pytest -q                          # ~2 min; needs the database (each run gets a throwaway schema seeded from the main grid record)
 uv run pytest tests/test_photo.py -q      # still-image suite only (~40 s)
+uv run pytest tests/test_auth.py -q       # Auth0 gate, tokens signed by a local RSA key (no network)
 uv run pytest tests/test_modules.py -q -k "light"          # one test by keyword
 uv run python scripts/evaluate.py OUT ~/Downloads/earwitness-tests/*   # real-clip regression: target 0 false edit alarms
 bash scripts/deploy.sh                    # rsync + remote_setup.sh to the server (deploy key ~/.ssh/earwitness_deploy), restarts the systemd service
@@ -40,6 +42,8 @@ Tests set `EARWITNESS_OFFLINE=1` and pop `OPENAI_API_KEY`; note that `earwitness
 **Verdict and plain answers come from `modules/brief.py` alone**, by deterministic rules over finding tags/titles (`_local_brief` / `_plain_answers` for video, `_local_brief_photo` / `_photo_answers` for stills), with an optional OpenAI narrative and "dossier" labelled AI-inferred. Verdicts: `EDITED`, `POSSIBLY EDITED`, `NO SIGNS OF EDITING`, and for stills `AI-GENERATED` (`verdictOf` in plain.ts maps them). Tags are the contract: `splice`/`cut`/`clone` findings with warning+ severity drive EDITED; `editor`/`history`/`modified`/`resized` drive POSSIBLY; `declared`+`synthetic` drive AI-GENERATED. Findings matched by title prefix (e.g. "Taken on ", "ENF dates", "Embedded thumbnail") are also part of that contract: renaming a title can silently change the verdict or an answer.
 
 **False-alarm discipline for pixel heuristics (stills).** ELA, grain, shifted-grid and per-block ghost regions are leads (`notice`, tags `ela`/`noise`/`grid`/`ghost`) and never move the verdict on their own; `photo_pixels.py` upgrades a lead to a `splice` warning only when a second independent trace overlaps the same `data.box`. Thumbnail mismatch, SIFT copy-move, appended data and declared generators are the trusted edit signals. Before changing any image detector, rerun it over the real unedited phone photos in `~/Downloads` (iPhone HEIC/JPEG, Samsung, WhatsApp/WeChat copies, screenshots) and the planted set from `demo_photo.py`; the standard is zero false "edited" verdicts on real originals.
+
+**Auth (Auth0).** Viewing is open; every endpoint that changes evidence (`POST /api/cases`, `/from-path`, `/rerun`, `DELETE`) depends on `server/auth.py:require_user`, which verifies an RS256 access token for `AUTH0_AUDIENCE` issued by `AUTH0_DOMAIN` (JWKS fetched and cached). Without all three env vars those endpoints answer 503, never "open". `/api/health` publishes `auth` (domain, client id, audience: public values) and the SPA wraps itself in `Auth0Provider` only when it is present (`web/src/lib/auth.tsx`); `authHeaders()` in `lib/api.ts` attaches the bearer token and starts a login redirect when logged out, so any new write call must go through it. Enhance and the WebSocket stay unauthenticated. Module tests drive `CaseStore` directly and bypass HTTP, so they need no token; HTTP-level tests patch `auth._signing_key` as `tests/test_auth.py` does. The deployed server's `.env` holds the Auth0 values; `scripts/remote_setup.sh` does not write them.
 
 **Stills in the UI.** `CaseInfo.kind === 'image'` swaps `Player` for `PhotoStage` (zoom/pan viewer, overlay maps = heatmap artifacts with `data.overlay: true`, boxes from findings' `data.box` as 0..1 fractions, lenses, magnifier, region enhance). `lib/region.ts` is the still-image counterpart of `lib/playback.ts`: a `useSyncExternalStore` store whose snapshot must stay referentially stable, plus `MediaKindContext` so shared widgets pick "photo"/"video" wording. `/api/cases/{id}/enhance` dispatches on kind: multi-frame super-resolution for video, full-res crop through forensic lenses for images.
 
