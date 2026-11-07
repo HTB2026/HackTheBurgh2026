@@ -9,6 +9,8 @@ Built for HackTheBurgh (G-Research: *discover the invisible in data*).
 
 ```sh
 uv sync                                  # Python 3.14 (uv fetches it); needs ffmpeg + tesseract
+cp .env.example .env                     # then paste your Tiger Data service URL
+uv run earwitness db migrate             # create the schema (the server also does this)
 (cd web && npm install && npm run build) # the HUD
 uv run earwitness serve                  # http://127.0.0.1:8765
 uv run earwitness demo --out demo        # demo pack with planted ground truth
@@ -28,6 +30,33 @@ estimates the location **blind**, without the file's GPS. When GPS exists, the
 error in km is reported. The key is read from the environment only and never
 reaches the browser. Frames and audio are sent to OpenAI only when the key is
 set.
+
+## Database (Tiger Data)
+
+Earwitness requires a [Tiger Data](https://www.tigerdata.com) (TimescaleDB)
+service. Set `TIMESCALE_SERVICE_URL` in `.env`; the server refuses to start
+without it. Tables live in the schema `EARWITNESS_DB_SCHEMA` (default
+`earwitness`):
+
+| Table | What | Kind |
+|---|---|---|
+| `grid_frequency` | Every GB grid-frequency sample fetched from NESO (1 s) / Elexon (15 s) | hypertable, segmented by source |
+| `grid_coverage` | Windows already fetched; a covered window needs no HTTP | table |
+| `grid_frequency_1m` | One-minute avg/min/max of the grid record | continuous aggregate |
+| `cases` | Every analysed clip: hash, verdict, the time the grid dated it to | table |
+| `findings` | Every finding of every case | hypertable, segmented by case |
+
+`cases/<id>/events.jsonl` stays the record a case replays from; the database
+is the shared grid record and the index across cases.
+
+```sh
+uv run earwitness db status         # hypertables, sizes, stored grid windows, counts
+uv run earwitness db import-cache   # load old ~/.cache/earwitness/grid/*.npz windows
+```
+
+API: `GET /api/search?since=&until=&severity=&module=&q=` (findings across
+cases), `GET /api/search/dated?start=&end=` (clips the grid dated into a
+window), `GET /api/grid?start=&end=` (stored grid record, per minute).
 
 The UI opens in a plain-language **Simple** view (verdict + "Has it been
 edited? / When? / Where? / Who? / Anything hidden?" cards with confidence);
@@ -56,7 +85,8 @@ the way burst photography does, so moving parts do not ghost.
 
 ## Verified
 
-`uv run pytest` (14 tests, ~45 s) runs every module on synthetic clips with
+`uv run pytest` (17 tests, ~100 s; needs the database, each run uses its own
+throwaway schema seeded with the stored grid record) runs every module on synthetic clips with
 planted ground truth:
 
 | Planted | Recovered |

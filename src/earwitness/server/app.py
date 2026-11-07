@@ -3,9 +3,12 @@
 import asyncio
 import os
 import shutil
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
+from datetime import datetime
+from datetime import timezone
 from typing import Any
 
-from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi import HTTPException
 from fastapi import UploadFile
@@ -17,6 +20,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from earwitness import db
 from earwitness.modules import registry
 from earwitness.server import enhance
 from earwitness.server import report_html
@@ -27,10 +31,37 @@ _ROOT = os.path.dirname(
 )
 _WEB = os.path.join(_ROOT, "web", "dist")
 
-load_dotenv(os.path.join(_ROOT, ".env"))
-
-app = FastAPI(title="earwitness")
+# earwitness.db has loaded .env by now.
 store = CaseStore(os.environ.get("EARWITNESS_CASES", os.path.join(_ROOT, "cases")))
+
+
+@asynccontextmanager
+async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
+    # The database is required: fail at startup, not on the first case.
+    db.url()
+    await db.migrate()
+    await db.open_pool()
+    await store.sync_index()
+
+    try:
+        yield
+    finally:
+        await db.close_pool()
+
+
+app = FastAPI(title="earwitness", lifespan=_lifespan)
+
+
+def _when(text: str | None, name: str) -> datetime | None:
+    if not text:
+        return None
+
+    try:
+        moment = datetime.fromisoformat(text)
+    except ValueError:
+        raise HTTPException(400, f"{name} must be an ISO date/time")
+
+    return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
 class PathCase(BaseModel):
@@ -61,6 +92,7 @@ async def health() -> dict[str, Any]:
     return {
         "ok": True,
         "openai": bool(os.environ.get("OPENAI_API_KEY")),
+        "database": await db.health(),
         "modules": [
             {"name": m.name, "title": m.title, "description": m.description}
             for m in registry.all_modules()
@@ -128,7 +160,55 @@ async def get_case(case_id: str) -> dict[str, Any]:
 
 @app.delete("/api/cases/{case_id}")
 async def delete_case(case_id: str) -> dict[str, Any]:
-    return {"deleted": store.delete(case_id)}
+    deleted = store.delete(case_id)
+    await db.delete_case(case_id)
+
+    return {"deleted": deleted}
+
+
+@app.get("/api/search")
+async def search(
+    since: str | None = None,
+    until: str | None = None,
+    severity: str | None = None,
+    module: str | None = None,
+    q: str | None = None,
+    limit: int = 200,
+) -> list[dict[str, Any]]:
+    """Findings across every case, newest first."""
+    rows = await db.search_findings(
+        since=_when(since, "since"),
+        until=_when(until, "until"),
+        severity=severity,
+        module=module,
+        text=q,
+        limit=max(1, min(limit, 1000)),
+    )
+
+    return db.to_json(rows)
+
+
+@app.get("/api/search/dated")
+async def search_dated(
+    start: str | None = None, end: str | None = None
+) -> list[dict[str, Any]]:
+    """Cases the grid record dated into [start, end]."""
+    return db.to_json(
+        await db.search_cases(
+            dated_from=_when(start, "start"), dated_to=_when(end, "end")
+        )
+    )
+
+
+@app.get("/api/grid")
+async def grid_minutes(start: str, end: str) -> list[dict[str, Any]]:
+    """Stored GB grid frequency as one-minute buckets (continuous aggregate)."""
+    lo, hi = _when(start, "start"), _when(end, "end")
+
+    if lo is None or hi is None or hi <= lo or (hi - lo).days > 31:
+        raise HTTPException(400, "need start < end, at most 31 days apart")
+
+    return db.to_json(await db.grid_minutes(lo, hi))
 
 
 @app.post("/api/cases/{case_id}/rerun")
