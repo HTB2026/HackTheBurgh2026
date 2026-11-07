@@ -125,8 +125,8 @@ export function DataView({ data, depth = 0 }: { data: Record<string, unknown> | 
               {latlon[0].toFixed(5)}, {latlon[1].toFixed(5)}
             </span>{' '}
             <CopyButton text={`${latlon[0]}, ${latlon[1]}`} label="Copy coordinates" />{' '}
-            <a className="link" href={`https://www.openstreetmap.org/?mlat=${latlon[0]}&mlon=${latlon[1]}#map=16/${latlon[0]}/${latlon[1]}`} target="_blank" rel="noreferrer">
-              Open map
+            <a className="link" href={`https://www.google.com/maps/search/?api=1&query=${latlon[0]},${latlon[1]}`} target="_blank" rel="noreferrer">
+              Open in Google Maps
             </a>
           </dd>
         </div>
