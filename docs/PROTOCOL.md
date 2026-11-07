@@ -26,6 +26,22 @@ built SPA (`web/dist`) is served by the same server at `/`. In dev, Vite proxies
 On connect the server replays every event so far, then streams new ones live.
 Every event has `seq` (0-based, increasing) and `ts` (unix seconds) plus a `type`:
 
+### Still photographs
+
+A case whose evidence is a picture carries `kind: "image"` (videos: `"video"`),
+`image: {width, height, format, mode, bits, frames, orientation, megapixels}`,
+`video: null`, `duration_s: 0`, `media_url` = an upright browser-viewable JPEG
+(`proxy.jpg`) and `original_url` for the untouched file. The image module set
+is separate (`/api/health` returns it as `image_modules`). Findings have no
+`time_s`; a finding that points at part of the picture carries
+`data.box = {x, y, w, h}` as fractions of the width and height, which the UI
+draws and zooms to. Heatmap artifacts with `data.overlay: true` can be laid over
+the picture. `kind: "file"` artifacts carry a downloadable `url` plus
+`data {label, bytes, strings, head_hex}`. The brief adds the verdict
+`AI-GENERATED` and the answers `synthetic`, `device`, `hidden`.
+`POST /api/cases/{id}/enhance` on an image ignores `time_s` and returns
+`lenses: [{name, url, caption}]` as well as `single_url`/`enhanced_url`.
+
 ### `case` (first event)
 ```json
 {"type":"case","case":{"id":"…","filename":"IMG_6335.MOV","duration_s":23.1,"size_bytes":27607625,

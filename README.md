@@ -1,9 +1,12 @@
 # EARWITNESS
 
-**Discover the invisible in a video.** Drop in any clip and a forensic HUD
-streams findings from the signals a viewer never notices: the hum of the power
-grid, flicker of the lights, heartbeats in skin colour, tones above hearing,
-the rhythm of the encoder, the physics of the camera sensor.
+**Discover the invisible in a video or a photograph.** Drop in any clip or
+picture and a forensic HUD streams findings from the signals a viewer never
+notices: the hum of the power grid, flicker of the lights, heartbeats in skin
+colour, tones above hearing, the rhythm of the encoder, the physics of the
+camera sensor; and, for stills, every byte of metadata, the quantisation
+tables, the ghosts of earlier saves, the camera's own thumbnail, the lowest
+bits of every pixel and the reflections in people's eyes.
 
 Built for HackTheBurgh (G-Research: *discover the invisible in data*).
 
@@ -61,6 +64,38 @@ window), `GET /api/grid?start=&end=` (stored grid record, per minute).
 The UI opens in a plain-language **Simple** view (verdict + "Has it been
 edited? / When? / Where? / Who? / Anything hidden?" cards with confidence);
 **Technical details** shows the full forensic HUD.
+
+## Photographs
+
+A still image gets its own set of checks (`kind: image` in the case event).
+They work at full resolution and ask what video cannot: has this exact file
+been through an editor, is it the camera's original, what did the generator
+write into it, and what does it carry besides the picture.
+
+| Module | What it finds | How |
+|---|---|---|
+| **Photo provenance** | Camera, lens, exposure; serial numbers and owner names; GPS fix with the compass heading of the camera (drawn as a wedge on the map) and the sun's position relative to it; every clock in the file reconciled (camera vs GPS/Samsung UTC clock gives the time zone; modify > capture means re-saved); XMP edit history; resized/cropped vs the camera's recorded size; screenshots; **embedded EXIF thumbnail compared with the picture**, globally and block by block | EXIF (all IFDs, own TIFF walker for IFD1), XMP, IPTC IIM, ICC `desc`, PNG text chunks, Samsung SEF trailer |
+| **Compression anatomy** | JPEG quality and whether the tables are libjpeg-standard; encoder habits (progressive, optimised Huffman, 4:4:4, Adobe markers) that no camera has; **JPEG ghosts** of an earlier, lower-quality save; the 8×8 block grid, including a grid in a PNG ("was once a JPEG") and tiles whose grid is shifted (pasted from another JPEG) | quantisation table matching, recompression at 36 qualities, median-robust block-boundary profiles per 64 px tile |
+| **Pixel forensics** | Error-level analysis at the file's own quality, grain consistency, **SIFT copy-move** (rotation and scale tolerant), resampling spectrum, histogram combing, luminance-gradient / PCA / amplified-grain views. Region leads become findings only when two independent traces agree on the same box | texture-normalised ELA/noise z-maps, RANSAC similarity on self-matches, Popescu–Farid predictor residual |
+| **Hidden data** | Bytes after the end marker (ZIP/PDF/other files, extra JPEGs from MPF depth maps, **motion-photo videos**), comments and unknown blocks, content under transparent pixels, sequential **LSB steganography** (chi-square step test), personal details (e-mails, paths, URLs) in metadata | byte accounting of the whole file |
+| **People** | Face count, which faces are large and sharp enough to recognise, eye crops enlarged for corneal reflections, names tagged in XMP face regions | YuNet, Laplacian sharpness |
+| **AI generation signals** | Content Credentials (C2PA/JUMBF) with generator and source type, IPTC digital source type, generator names, the **Stable Diffusion recipe** (prompt, seed, model) in PNG text, ComfyUI workflows; weak statistical signals (spectral bumps, noise floor, generator-typical sizes) reported as weak | string-level manifest parsing, radial power spectrum |
+| **OCR / AI eyewitness / Geolocation / Weather** | As for video, on the whole picture plus its four quarters at full resolution; the vision model also gives an AI-generation opinion (labelled AI) | |
+| **Case brief** | Verdict EDITED / POSSIBLY EDITED / NO SIGNS OF EDITING / **AI-GENERATED**, with answers: edited? made by AI? when? where (GPS, or the time zone the clock was set to)? what took it? who is in it? anything hidden? | rules; AI narrative and dossier if enabled |
+
+The viewer replaces the video player: zoom and pan to native pixels, lay any
+forensic map over the picture with opacity and blend control, see every
+flagged region as a box, switch lenses (levels, negative, channels, edges,
+colour ×4), a magnifier, and **Examine a detail**: a region cut from the
+original at full resolution, enlarged, through eight forensic lenses (error
+levels, grain ×12, equalised, negative, edges, R/G/B). Nothing invents pixels.
+
+Verified on planted photos (`uv run pytest tests/test_photo.py`): clone offset
+recovered to the pixel, the stale thumbnail, the appended ZIP, the Stable
+Diffusion recipe with its seed, the LSB message, the picture under
+transparency, the motion-photo video and the "PNG was a JPEG" grid. Twelve
+real, unedited phone photos (iPhone HEIC/JPEG, Samsung, WhatsApp/WeChat
+copies, a screenshot) raise no edit verdict.
 
 ## Modules
 

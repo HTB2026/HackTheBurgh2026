@@ -12,7 +12,7 @@
   {
     "file": "demo/02_cloned.mp4",
     "hidden": [
-      "copy-move forgery: top-right patch stamped bottom-left"
+      "copy-move forgery: a 90x70 patch stamped 300 px to the right"
     ]
   },
   {
@@ -50,6 +50,49 @@
       "mains hum dated 2026-11-07T14:00:00+00:00 against grid.csv",
       "second half recorded 30 min later, splice at 150.0 s",
       "two aircraft Doppler sweeps"
+    ]
+  },
+  {
+    "file": "demo/photos/10_camera_original.jpg",
+    "hidden": [
+      "nothing: a camera-style JPEG with full EXIF, GPS fix facing SE, GPS clock one hour behind the local clock (UTC+1), matching thumbnail"
+    ]
+  },
+  {
+    "file": "demo/photos/11_edited.jpg",
+    "hidden": [
+      "copy-move: the 150x110 patch at (160, 760) stamped (300, 120) px away",
+      "pasted region (640, 800, 320, 256) from a quality-45 JPEG (grid-aligned: JPEG ghost)",
+      "pasted region (1176, 752, 320, 256) from a quality-50 JPEG, 3 px off the 8x8 grid",
+      "house number 3 painted over with ground",
+      "EXIF thumbnail still shows the unedited picture",
+      "software tag 'PhotoFix Pro 4.2'",
+      "a ZIP archive (secret.txt) appended after the JPEG end marker"
+    ]
+  },
+  {
+    "file": "demo/photos/12_generated.png",
+    "hidden": [
+      "Stable Diffusion recipe (prompt, seed, model) in the PNG 'parameters' chunk"
+    ]
+  },
+  {
+    "file": "demo/photos/13_stego.png",
+    "hidden": [
+      "LSB-embedded message (encrypted payload) over the first 45% of the pixels",
+      "a different picture under the fully transparent right third"
+    ]
+  },
+  {
+    "file": "demo/photos/14_motion.jpg",
+    "hidden": [
+      "an MP4 container appended after the JPEG (motion photo)"
+    ]
+  },
+  {
+    "file": "demo/photos/15_png_was_jpeg.png",
+    "hidden": [
+      "lossless PNG that was a quality-60 JPEG: the 8x8 grid survives"
     ]
   }
 ]

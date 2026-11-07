@@ -123,8 +123,32 @@ _SCHEMA = {
                 },
             },
         },
+        "synthetic": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["likelihood", "evidence"],
+            "properties": {
+                "likelihood": {
+                    "type": "string",
+                    "enum": [
+                        "very unlikely",
+                        "unlikely",
+                        "possible",
+                        "likely",
+                        "very likely",
+                    ],
+                    "description": "How likely the picture was generated or heavily altered by an AI model.",
+                },
+                "evidence": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "Concrete visual reasons: hands, text, reflections, textures, geometry, lighting, over-smooth skin.",
+                },
+            },
+        },
     },
 }
+_SCHEMA["required"].append("synthetic")
 
 _INSTRUCTIONS = (
     "You are a careful open-source-intelligence and video forensics analyst. You receive numbered "
@@ -133,8 +157,25 @@ _INSTRUCTIONS = (
     "road markings and driving side, architecture, vegetation, shop brands, weather and sun. Look for "
     "reflections (windows, glasses, screens) that reveal what is off-camera. Note manipulation signs only "
     "if concrete (warped background near a face, inconsistent shadows, mismatched lighting, cloned "
-    "texture, impossible geometry)."
+    "texture, impossible geometry). For 'synthetic', judge whether an AI model generated or heavily "
+    "altered the picture from visual evidence only (malformed hands or text, impossible reflections, "
+    "waxy skin, melted backgrounds, inconsistent perspective); say 'unlikely' when nothing concrete suggests it."
 )
+
+_STILL_INSTRUCTIONS = _INSTRUCTIONS.replace(
+    "You receive numbered keyframes from one video.",
+    "You receive one photograph: image 1 is the whole picture, images 2-5 are its four quarters at higher resolution (top-left, top-right, bottom-left, bottom-right).",
+)
+
+
+def _fit(rgb: np.ndarray, max_side: int) -> np.ndarray:
+    scale = max_side / max(rgb.shape[:2])
+
+    return (
+        rgb
+        if scale >= 1
+        else cv2.resize(rgb, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+    )
 
 
 class Vision:
@@ -148,27 +189,60 @@ class Vision:
             raise Skip("set OPENAI_API_KEY to enable")
 
         info = await ctx.video_info()
+        still = ctx.kind == "image"
 
-        if info is None:
+        if info is None and not still:
             raise Skip("no video stream")
 
-        timeline = await ctx.wait_for("timeline") or {}
-        times = list(np.linspace(0.3, max(0.3, info.duration_s - 0.3), _FRAMES))
+        if still:
+            image = ctx.image()
+            h, w = image.shape[:2]
+            frames = [("the whole picture", ctx.image_scaled(1536))]
 
-        for cut in (timeline.get("cuts") or [])[:3]:
-            times.append(cut + 0.3)
+            for row in range(2):
+                for col in range(2):
+                    tile = image[
+                        row * h // 2 : (row + 1) * h // 2,
+                        col * w // 2 : (col + 1) * w // 2,
+                    ]
+                    frames.append(
+                        (
+                            f"{'top' if row == 0 else 'bottom'}-{'left' if col == 0 else 'right'} quarter",
+                            _fit(tile, 1024),
+                        )
+                    )
 
-        times = sorted({round(t, 2) for t in times})[: _FRAMES + 2]
-        content = [
-            {
-                "type": "input_text",
-                "text": f"{len(times)} keyframes follow, numbered from 1 in time order.",
-            }
-        ]
+            times = [0.0] * len(frames)
+            content = [
+                {
+                    "type": "input_text",
+                    "text": "One photograph follows: the whole picture, then its four quarters at higher resolution.",
+                }
+            ]
+        else:
+            timeline = await ctx.wait_for("timeline") or {}
+            times = list(np.linspace(0.3, max(0.3, info.duration_s - 0.3), _FRAMES))
+
+            for cut in (timeline.get("cuts") or [])[:3]:
+                times.append(cut + 0.3)
+
+            times = sorted({round(t, 2) for t in times})[: _FRAMES + 2]
+            frames = []
+            content = [
+                {
+                    "type": "input_text",
+                    "text": f"{len(times)} keyframes follow, numbered from 1 in time order.",
+                }
+            ]
+
         out.progress(0.1, "grabbing keyframes")
 
         for number, time_s in enumerate(times, start=1):
-            frame = await ctx.frame_at(time_s, width=min(1024, info.width))
+            if still:
+                label, frame = frames[number - 1]
+            else:
+                label = f"at {time_s:.1f} s"
+                frame = await ctx.frame_at(time_s, width=min(1024, info.width))
 
             if frame is None:
                 continue
@@ -179,7 +253,10 @@ class Vision:
                 [cv2.IMWRITE_JPEG_QUALITY, 82],
             )
             content.append(
-                {"type": "input_text", "text": f"Frame {number} at {time_s:.1f} s:"}
+                {
+                    "type": "input_text",
+                    "text": f"{'Image' if still else 'Frame'} {number} {label}:",
+                }
             )
             content.append(
                 {
@@ -192,12 +269,12 @@ class Vision:
         out.progress(0.3, "consulting vision model")
         result = await openai_client.structured(
             ctx.workdir,
-            instructions=_INSTRUCTIONS,
+            instructions=_STILL_INSTRUCTIONS if still else _INSTRUCTIONS,
             content=content,
             schema=_SCHEMA,
             name="visual_report",
         )
-        frame_time = {i: t for i, t in enumerate(times, start=1)}
+        frame_time = {i: (None if still else t) for i, t in enumerate(times, start=1)}
         model = result.get("_model", "model")
         out.artifact(
             "report",
@@ -256,6 +333,35 @@ class Vision:
                 time_s=frame_time.get(sign["frame"]),
                 kind="inferred",
                 tags=["tamper"],
+            )
+
+        synthetic = result.get("synthetic") or {}
+
+        if synthetic.get("likelihood") in ("possible", "likely", "very likely"):
+            out.finding(
+                "warning" if synthetic["likelihood"] != "possible" else "notice",
+                f"AI eyewitness: AI generation {synthetic['likelihood']}",
+                "Judging from the picture alone: "
+                + "; ".join(synthetic.get("evidence", [])[:5])
+                + ". This is a model's opinion about another model's work; weigh it with the file-level signals.",
+                kind="inferred",
+                tags=["synthetic", "ai-opinion"],
+                data=synthetic,
+            )
+        elif synthetic.get("likelihood"):
+            out.finding(
+                "info",
+                f"AI eyewitness: AI generation {synthetic['likelihood']}",
+                "Nothing in the picture itself suggested a generated image"
+                + (
+                    ": " + "; ".join(synthetic.get("evidence", [])[:3])
+                    if synthetic.get("evidence")
+                    else ""
+                )
+                + ".",
+                kind="inferred",
+                tags=["synthetic", "ai-opinion"],
+                data=synthetic,
             )
 
         ctx.publish(self.name, result)

@@ -174,6 +174,61 @@ class Frames:
     fps: float
 
 
+@dataclass(frozen=True, slots=True)
+class ImageInfo:
+    """A still photograph (after EXIF orientation is applied)."""
+
+    width: int
+    height: int
+    format: str  # JPEG, PNG, HEIF, WEBP, TIFF, ...
+    mode: str  # RGB, RGBA, L, ...
+    bits: int
+    frames: int  # >1 for animations / multi-page files
+    orientation: int  # the EXIF orientation that was applied (1 = none)
+    stored_width: int  # pixel size as stored, before rotation
+    stored_height: int
+
+
+_IMAGE_EXTENSIONS = {
+    ".jpg", ".jpeg", ".jpe", ".jfif", ".png", ".webp", ".heic", ".heif", ".hif",
+    ".avif", ".tif", ".tiff", ".bmp", ".gif", ".dng", ".jp2", ".psd", ".ico",
+}  # fmt: skip
+_AUDIO_EXTENSIONS = {".wav", ".mp3", ".m4a", ".aac", ".flac", ".ogg", ".opus", ".wma", ".aiff", ".aif"}  # fmt: skip
+
+MediaKind = Literal["video", "image", "audio"]
+
+
+def media_kind_of(path: str) -> MediaKind:
+    """Image, audio or video, from the file's own bytes (extension as a fallback)."""
+    ext = os.path.splitext(path)[1].lower()
+
+    try:
+        with open(path, "rb") as handle:
+            head = handle.read(32)
+    except OSError:
+        head = b""
+
+    if (
+        head[:3] == b"\xff\xd8\xff"
+        or head[:8] == b"\x89PNG\r\n\x1a\n"
+        or head[:4] == b"RIFF" and head[8:12] == b"WEBP"
+        or head[4:12] in (b"ftypheic", b"ftypheix", b"ftypmif1", b"ftypavif", b"ftypheif", b"ftyphevc")
+        or head[:4] in (b"II*\x00", b"MM\x00*")
+        or head[:2] == b"BM"
+        or head[:6] in (b"GIF87a", b"GIF89a")
+        or head[:4] == b"8BPS"
+    ):  # fmt: skip
+        return "image"
+
+    if ext in _IMAGE_EXTENSIONS:
+        return "image"
+
+    if ext in _AUDIO_EXTENSIONS:
+        return "audio"
+
+    return "video"
+
+
 class CaseContext:
     """Everything modules share about one piece of evidence.
 
@@ -188,10 +243,56 @@ class CaseContext:
         self.options = options
         self.findings: list[Finding] = []
         self.artifacts: dict[str, Artifact] = {}
+        self.kind: MediaKind = media_kind_of(path)
         self._cache: dict[str, Any] = {}
         self._locks: dict[str, asyncio.Lock] = {}
         self._published: dict[str, Any] = {}
         self._events: dict[str, asyncio.Event] = {}
+
+    # ---- still images -----------------------------------------------------
+    def image(self) -> np.ndarray | None:
+        """The whole photograph, RGB uint8, EXIF orientation applied (cached)."""
+        if self.kind != "image":
+            return None
+
+        if "image" not in self._cache:
+            from earwitness import photo
+
+            loaded = photo.load(self.path)
+            self._cache["image"] = loaded.pixels if loaded else None
+            self._cache["image_info"] = loaded.info if loaded else None
+
+        return self._cache["image"]
+
+    def image_info(self) -> ImageInfo | None:
+        if self.kind != "image":
+            return None
+
+        self.image()
+
+        return self._cache.get("image_info")
+
+    def image_scaled(self, width: int) -> np.ndarray | None:
+        """The photograph scaled to ``width`` pixels wide (never upscaled)."""
+        image = self.image()
+
+        if image is None:
+            return None
+
+        if width >= image.shape[1]:
+            return image
+
+        key = f"image_scaled:{width}"
+
+        if key not in self._cache:
+            import cv2
+
+            height = max(1, int(round(width * image.shape[0] / image.shape[1])))
+            self._cache[key] = cv2.resize(
+                image, (width, height), interpolation=cv2.INTER_AREA
+            )
+
+        return self._cache[key]
 
     async def _cached[T](self, key: str, make: Callable[[], Awaitable[T]]) -> T:
         lock = self._locks.setdefault(key, asyncio.Lock())
@@ -236,6 +337,10 @@ class CaseContext:
         return await self._cached("probe", make)
 
     async def video_info(self) -> VideoInfo | None:
+        # ffprobe reports a still image as a one-frame "video"; it is not one.
+        if self.kind != "video":
+            return None
+
         async def make() -> VideoInfo | None:
             probe = await self.probe()
             stream = next(
@@ -285,6 +390,9 @@ class CaseContext:
         return await self._cached("video_info", make)
 
     async def audio(self) -> media.Recording | None:
+        if self.kind == "image":
+            return None
+
         async def make() -> media.Recording | None:
             recording = await media.load(self.path)
 
@@ -406,7 +514,19 @@ class CaseContext:
     async def frame_at(
         self, time_s: float, *, width: int | None = None
     ) -> np.ndarray | None:
-        """One full-resolution (or scaled) RGB frame at ``time_s``."""
+        """One full-resolution (or scaled) RGB frame at ``time_s``.
+
+        For a still image this is the photograph itself (``time_s`` is ignored),
+        so frame-based modules (OCR, vision, geolocation) work unchanged.
+        """
+        if self.kind == "image":
+            image = self.image()
+
+            if image is None:
+                return None
+
+            return self.image_scaled(width) if width else image
+
         info = await self.video_info()
 
         if info is None:

@@ -5,6 +5,8 @@ import { usePlayback } from '../../lib/playback'
 import { mmss } from '../../lib/format'
 import { modulePlain, SEVERITY } from '../../lib/plain'
 import { rankFindings } from '../../lib/facts'
+import { boxOf } from '../../lib/types'
+import { useMediaKind, useRegionFocus } from '../../lib/region'
 import { Empty, Icon, SevChip, SourceChip } from '../ui/ui'
 import { DataView } from '../ui/Data'
 
@@ -22,6 +24,24 @@ function ModuleTag({ name, modules }: { name: string; modules: Record<string, Mo
 
 function TimeButton({ f }: { f: Finding }) {
   const pb = usePlayback()
+  const kind = useMediaKind()
+  const rf = useRegionFocus()
+  const box = boxOf(f)
+  if (kind === 'image') {
+    if (!box) return <span className="faint">whole photo</span>
+    return (
+      <button
+        className="timebtn mono"
+        onClick={(e) => {
+          e.stopPropagation()
+          rf.focus(box, f.title)
+        }}
+        data-tip="Zoom the picture to this region"
+      >
+        <Icon name="vector-square" /> region
+      </button>
+    )
+  }
   if (f.time_s == null) return <span className="faint">whole video</span>
   return (
     <button

@@ -54,8 +54,8 @@ export function Header({ route }: { route: string }) {
             )
           )}
           {health && (
-            <span className="status-pill c-green" data-tip={`${health.modules.length} checks run on every video`}>
-              <i className="status-dot on" /> {health.modules.length} checks ready
+            <span className="status-pill c-green" data-tip={`${health.modules.length} checks run on every video, ${health.image_modules?.length ?? 0} on every photo`}>
+              <i className="status-dot on" /> {health.modules.length + (health.image_modules?.length ?? 0)} checks ready
             </span>
           )}
         </div>

@@ -21,7 +21,7 @@ export function HowItWorks() {
         </Alert>
 
         <SectionTitle icon="list-check" accent="teal" small="Every check runs on every video">
-          The checks
+          The checks for video
         </SectionTitle>
         <div className="how-grid">
           {(health?.modules ?? []).map((m) => {
@@ -51,12 +51,43 @@ export function HowItWorks() {
           {!health && <Redacted lines={6} />}
         </div>
 
+        <SectionTitle icon="image" accent="purple" small="A photograph is one exposure at full resolution: different questions, different checks">
+          The checks for photographs
+        </SectionTitle>
+        <div className="how-grid">
+          {(health?.image_modules ?? []).map((m) => {
+            const p = modulePlain(m.name, m.title)
+            return (
+              <article key={`img:${m.name}`} className={`panel how-card c-${p.accent}`}>
+                <header>
+                  <Icon name={p.icon} />
+                  <h3>{p.name}</h3>
+                  <small className="mono faint">{m.title}</small>
+                </header>
+                <p>{p.does}</p>
+                {p.reveals && (
+                  <p>
+                    <b>Can reveal:</b> <span className="muted">{p.reveals}</span>
+                  </p>
+                )}
+                {p.limits && (
+                  <p>
+                    <b>Limits:</b> <span className="muted">{p.limits}</span>
+                  </p>
+                )}
+                <p className="faint small">{m.description}</p>
+              </article>
+            )
+          })}
+          {!health && <Redacted lines={6} />}
+        </div>
+
         <SectionTitle icon="scale-balanced" accent="red" id="verdict" small="The verdict is the strongest claim the evidence supports">
           Reading the verdict
         </SectionTitle>
         <div className="panel pad">
           <dl className="stats">
-            {(['edited', 'possible', 'clean'] as const).map((v) => (
+            {(['edited', 'possible', 'clean', 'synthetic'] as const).map((v) => (
               <div key={v}>
                 <dt>
                   <span className={`pill inline v-${v}`}>
@@ -107,6 +138,10 @@ export function HowItWorks() {
         <div className="panel pad prose">
           <p>
             <b>No cuts found is not the same as authentic.</b> A video can be staged, or an AI-generated clip can be recorded off a screen in one take.
+          </p>
+          <p>
+            <b>A photo with no signs of editing can still be generated.</b> Only a label the generator wrote (Content Credentials, a recipe, a name)
+            proves AI origin; pixel statistics merely raise suspicion, and a generated picture re-saved through a phone loses even those.
           </p>
           <p>
             <b>Labels inside a file can be edited.</b> Dates, device names and GPS are treated as weak evidence unless another check (the power grid,

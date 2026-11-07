@@ -328,18 +328,56 @@ class Geo:
             raise Skip("set OPENAI_API_KEY to enable")
 
         info = await ctx.video_info()
+        still = ctx.kind == "image"
 
-        if info is None:
+        if info is None and not still:
             raise Skip("no video stream")
 
         out.progress(0.05, "choosing frames")
-        frames = await _pick_frames(ctx, info.duration_s)
+
+        if still:
+            # The whole photograph, at the resolution the model takes, plus the
+            # four quarters so that small signs and plates stay legible.
+            image = ctx.image()
+            h, w = image.shape[:2]
+            frames = [(0.0, ctx.image_scaled(1280))]
+
+            for row in range(2):
+                for col in range(2):
+                    tile = image[
+                        row * h // 2 : (row + 1) * h // 2,
+                        col * w // 2 : (col + 1) * w // 2,
+                    ]
+                    scale = min(1.0, 1024 / max(tile.shape[:2]))
+                    frames.append(
+                        (
+                            0.0,
+                            cv2.resize(
+                                tile,
+                                None,
+                                fx=scale,
+                                fy=scale,
+                                interpolation=cv2.INTER_AREA,
+                            )
+                            if scale < 1
+                            else tile,
+                        )
+                    )
+        else:
+            frames = await _pick_frames(ctx, info.duration_s)
 
         if not frames:
             raise Skip("no decodable frames")
 
         evidence: list[dict[str, str]] = []
         frame_paths = []
+        labels = [
+            "the whole picture",
+            "top-left quarter",
+            "top-right quarter",
+            "bottom-left quarter",
+            "bottom-right quarter",
+        ]
 
         for number, (time_s, frame) in enumerate(frames):
             path = out.path(f"frame{number}.jpg")
@@ -349,14 +387,25 @@ class Geo:
                 [cv2.IMWRITE_JPEG_QUALITY, 92],
             )
             frame_paths.append((time_s, path))
-            out.artifact(
-                f"frame{number}", "image", f"Frame analysed @ {time_s:.1f}s",
-                file=path, time_s=time_s,
-            )  # fmt: skip
+
+            if still:
+                out.artifact(
+                    f"frame{number}",
+                    "image",
+                    f"View analysed: {labels[number]}",
+                    file=path,
+                )
+            else:
+                out.artifact(
+                    f"frame{number}", "image", f"Frame analysed @ {time_s:.1f}s",
+                    file=path, time_s=time_s,
+                )  # fmt: skip
             evidence += [
                 {
                     "type": "input_text",
-                    "text": f"Frame {number + 1} (at {time_s:.1f} s):",
+                    "text": f"Image {number + 1} ({labels[number]}):"
+                    if still
+                    else f"Frame {number + 1} (at {time_s:.1f} s):",
                 },
                 _image_part(path),
             ]
@@ -367,14 +416,23 @@ class Geo:
         script = os.path.join(os.path.expanduser(skill or ""), "scripts", "intake.py")
 
         if skill and os.path.isfile(script):
-            sharpest = sorted(
-                frame_paths,
-                key=lambda p: (
-                    -cv2.Laplacian(
-                        cv2.imread(p[1], cv2.IMREAD_GRAYSCALE), cv2.CV_64F
-                    ).var()
-                ),
-            )[:_INTAKE_FRAMES]
+            if still:
+                full_path = out.path("full.jpg")
+                cv2.imwrite(
+                    full_path,
+                    cv2.cvtColor(ctx.image_scaled(4000), cv2.COLOR_RGB2BGR),
+                    [cv2.IMWRITE_JPEG_QUALITY, 94],
+                )
+                sharpest = [(0.0, full_path)]
+            else:
+                sharpest = sorted(
+                    frame_paths,
+                    key=lambda p: (
+                        -cv2.Laplacian(
+                            cv2.imread(p[1], cv2.IMREAD_GRAYSCALE), cv2.CV_64F
+                        ).var()
+                    ),
+                )[:_INTAKE_FRAMES]
 
             for number, (time_s, path) in enumerate(sharpest):
                 out.progress(
@@ -522,7 +580,7 @@ class Geo:
             )
 
         verify_content: list[dict[str, str]] = list(
-            evidence[: 2 * min(4, len(frame_paths))]
+            evidence[: 2 * min(5 if still else 4, len(frame_paths))]
         )
 
         # A fixed shuffled order, without the proposer's odds, so the verifier
@@ -726,7 +784,7 @@ class Geo:
             "notice",
             f"{'Located' if verified else 'Pixels suggest'}: {verdict['place']} (±{verdict['radius_km']:.0f} km, {verdict['confidence']} confidence)",
             detail,
-            time_s=frames[0][0],
+            time_s=None if still else frames[0][0],
             kind="inferred",
             tags=["location", "osint"],
             data=guess,

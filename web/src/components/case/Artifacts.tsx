@@ -2,6 +2,7 @@ import { Component, useState, type ReactNode } from 'react'
 import type { Artifact } from '../../lib/types'
 import type { ModuleState } from '../../lib/state'
 import { usePlayback } from '../../lib/playback'
+import { useRegionFocus } from '../../lib/region'
 import { mmss } from '../../lib/format'
 import { explainArtifact, modulePlain } from '../../lib/plain'
 import { Icon, Modal } from '../ui/ui'
@@ -29,6 +30,8 @@ const KIND_ICON: Record<string, string> = {
   waveform: 'wave-square',
   filmstrip: 'film',
   brief: 'scale-balanced',
+  file: 'file-zipper',
+  dossier: 'eye',
 }
 
 const VISUAL = new Set(['image', 'heatmap', 'video'])
@@ -129,6 +132,28 @@ export function ArtifactBody({ a }: { a: Artifact }) {
     case 'image':
     case 'heatmap':
       return a.url ? <img className="inline-img" src={a.url} alt={a.title} /> : null
+    case 'file':
+      return (
+        <div className="file-art">
+          {a.url && (
+            <a className="btn sm" href={a.url} target="_blank" rel="noreferrer" download>
+              <Icon name="download" /> Download the appended data ({a.data?.bytes?.toLocaleString?.('en-GB') ?? '?'} bytes)
+            </a>
+          )}
+          {a.data?.label && <p className="muted small">Identified as: {a.data.label}</p>}
+          {a.data?.head_hex && <pre className="hex mono">{a.data.head_hex}</pre>}
+          {Array.isArray(a.data?.strings) && a.data.strings.length > 0 && (
+            <>
+              <h4 className="sub">Readable fragments</h4>
+              <ul className="strings mono">
+                {a.data.strings.slice(0, 40).map((s: string, i: number) => (
+                  <li key={i}>{s}</li>
+                ))}
+              </ul>
+            </>
+          )}
+        </div>
+      )
     default:
       return (
         <div className="json-box">
@@ -169,9 +194,11 @@ export function TextBlock({ text }: { text: string }) {
 /** Beatmap-style card: image on top, status pill, round accent button overlapping the image edge. */
 export function ExhibitCard({ a, modules }: { a: Artifact; modules: Record<string, ModuleState> }) {
   const pb = usePlayback()
+  const rf = useRegionFocus()
   const [open, setOpen] = useState(false)
   const p = modulePlain(a.module, modules[a.module]?.title)
   const t: number | null = a.data?.time_s ?? a.time_s ?? null
+  const box = a.data?.box && typeof a.data.box.x === 'number' ? a.data.box : null
   return (
     <article className={`card c-${p.accent}`}>
       <div className="card-img" onClick={() => setOpen(true)} role="button" tabIndex={0} onKeyDown={(e) => e.key === 'Enter' && setOpen(true)}>
@@ -181,12 +208,17 @@ export function ExhibitCard({ a, modules }: { a: Artifact; modules: Record<strin
           a.url && <img src={a.url} alt={a.title} loading="lazy" />
         )}
         <span className="pill">
-          <Icon name={p.icon} /> {a.kind === 'heatmap' ? 'Tamper map' : a.kind === 'video' ? 'Video' : p.name}
+          <Icon name={p.icon} /> {a.kind === 'heatmap' ? (a.data?.overlay ? 'Overlay map' : 'Tamper map') : a.kind === 'video' ? 'Video' : p.name}
         </span>
       </div>
       {t != null && (
         <button className="card-play" onClick={() => pb.seek(t)} data-tip={`Jump the video to ${mmss(t)}`} aria-label="Jump to this moment">
           <Icon name="play" />
+        </button>
+      )}
+      {t == null && box && (
+        <button className="card-play" onClick={() => rf.focus(box, a.title)} data-tip="Show this region on the picture" aria-label="Show on the picture">
+          <Icon name="vector-square" />
         </button>
       )}
       <div className="card-body">

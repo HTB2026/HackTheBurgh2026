@@ -133,6 +133,39 @@ export const MODULES: Record<string, ModulePlain> = {
     reveals: 'Whether independent checks agree, which is what makes a conclusion strong.',
     limits: 'Only as good as the checks underneath it.',
   },
+  // ---- still photographs
+  jpeg: {
+    name: 'Compression anatomy',
+    icon: 'table-cells',
+    accent: 'blue',
+    does: 'Reads how the picture was compressed: the quality tables, the encoder\u2019s habits, ghosts of earlier saves, and the 8\u00d78 block grid.',
+    reveals: 'Which software wrote the file, whether it was saved more than once, and patches pasted in from another JPEG.',
+    limits: 'A re-save at very high quality hides the earlier one; fine repeating textures can imitate a grid.',
+  },
+  hidden: {
+    name: 'Hidden data',
+    icon: 'eye-slash',
+    accent: 'red',
+    does: 'Accounts for every byte that is not the picture: data after the end marker, comments, private blocks, the lowest bits, and what sits under transparency.',
+    reveals: 'Appended archives and videos, extra embedded images, hidden messages, and personal details in the labels.',
+    limits: 'A message hidden with a modern tool in a JPEG is not detectable here; only the classic hiding places are checked.',
+  },
+  faces: {
+    name: 'People',
+    icon: 'user',
+    accent: 'pink',
+    does: 'Finds faces, measures whether each is large and sharp enough to recognise, and enlarges the eyes to show their reflections.',
+    reveals: 'How many people are identifiable, names that photo software tagged into the file, and what the subject was looking at.',
+    limits: 'Nobody is identified. Faces turned away, masked or tiny are not counted.',
+  },
+  synthetic: {
+    name: 'AI generation signals',
+    icon: 'robot',
+    accent: 'purple',
+    does: 'Looks for the labels generators write (Content Credentials, recipes, names) and for weak statistical traces of synthetic pixels.',
+    reveals: 'Whether the file itself says it was generated, and with which prompt, seed and model.',
+    limits: 'Without a label, pixel statistics only raise suspicion; they never prove generation.',
+  },
 }
 
 export function modulePlain(name: string, title?: string): ModulePlain {
@@ -156,6 +189,8 @@ export type TabKey =
   | 'sound'
   | 'light'
   | 'picture'
+  | 'compression'
+  | 'hidden'
   | 'people'
   | 'place'
   | 'text'
@@ -207,18 +242,36 @@ export const TABS: TabDef[] = [
     label: 'Picture',
     icon: 'image',
     accent: 'purple',
-    modules: ['tamper', 'vision'],
-    tags: ['tamper', 'clone', 'scene'],
-    intro: 'Signs that parts of the picture were altered, and what an AI eyewitness saw in the frames. Zoom in on any detail from the player.',
+    modules: ['tamper', 'vision', 'synthetic'],
+    tags: ['tamper', 'clone', 'scene', 'synthetic'],
+    intro: 'Signs that parts of the picture were altered or generated, and what an AI eyewitness saw. Zoom in on any detail from the viewer.',
+  },
+  {
+    key: 'compression',
+    label: 'Compression',
+    icon: 'table-cells',
+    accent: 'blue',
+    modules: ['jpeg'],
+    tags: ['jpeg', 'ghost', 'grid', 'resaved'],
+    intro: 'How the file was compressed: the tables and habits of the encoder, ghosts of earlier saves, and the 8\u00d78 grid that every JPEG leaves behind.',
+  },
+  {
+    key: 'hidden',
+    label: 'Hidden data',
+    icon: 'eye-slash',
+    accent: 'red',
+    modules: ['hidden'],
+    tags: ['hidden', 'steganography', 'appended', 'lsb'],
+    intro: 'Everything in the file that is not the picture: appended files, extra images, comments, the lowest bits, and what sits under transparency.',
   },
   {
     key: 'people',
     label: 'People',
     icon: 'heart-pulse',
     accent: 'pink',
-    modules: ['pulse'],
-    tags: ['face', 'pulse', 'person'],
-    intro: 'Signs of living people on camera: faces, and heartbeats read from tiny changes in skin colour.',
+    modules: ['pulse', 'faces'],
+    tags: ['face', 'pulse', 'person', 'identifiable'],
+    intro: 'Signs of people: faces and whether they are recognisable, eye reflections, and (on video) heartbeats read from tiny changes in skin colour.',
   },
   {
     key: 'place',
@@ -298,14 +351,7 @@ const EXPLAIN: Record<string, string> = {
   'pulse:waveform': 'Tiny colour changes in skin over time. A regular rhythm is a heartbeat.',
   'pulse:bpm': 'Heart rate estimated across the video. A believable, fairly steady value suggests a living person.',
   'pulse:magnified': 'Left: the original. Right: skin-colour changes amplified so the pulse becomes visible.',
-  'tamper:noise':
-    'Sensor grain across the frame. Bright patches have grain unlike the rest of the picture, which can mean they were pasted in.',
-  'tamper:ela':
-    'Error-level analysis: the frame is re-saved and compared with itself. Areas edited after recording often glow because they recompress differently.',
-  'provenance:tags': 'Every label stored inside the file, exactly as written by the device or app that made it.',
   'provenance:streams': 'The separate tracks inside the file (picture, sound, data) and how each is encoded.',
-  'provenance:boxes':
-    'The order of the building blocks ("boxes") inside the file. Cameras write them in a typical order; editors and apps rewrite it.',
   'provenance:probe': 'The complete raw technical readout of the file from ffprobe. Expand any branch to inspect it.',
   'provenance:map': 'The GPS position stored in the file. The circle is the accuracy the phone reported.',
   'ocr:text': 'Every piece of text read from the frames, when it first appeared, and in how many frames.',
@@ -314,6 +360,40 @@ const EXPLAIN: Record<string, string> = {
   'geo:map': 'Where the clues in the picture point. The circle shows how uncertain the estimate is.',
   'geo:intake': 'The working notes of the location search for one frame.',
   'geo:frame': 'A frame the location search examined.',
+  // ---- still photographs
+  'provenance:tags': 'Every label stored inside the file, exactly as the camera or app wrote it: EXIF, XMP, IPTC, ICC and text chunks.',
+  'provenance:clocks': 'Every clock the file carries. A camera writes them all within a second of each other; editors leave later ones.',
+  'provenance:history': 'The edit log Adobe-style software keeps inside the file: what was done, when, and by which program.',
+  'provenance:thumbnail': 'Left: the small preview the camera wrote at capture. Middle: the picture now, shrunk to match. Right: where they differ (bright = changed).',
+  'provenance:boxes': 'The order of the blocks (segments, chunks or boxes) inside the file. Cameras write a typical order; editors and apps rewrite it.',
+  'jpeg:quant': 'The 8\u00d78 quantisation table: how coarsely each frequency was stored. Small numbers = high quality. Its exact values fingerprint the encoder.',
+  'jpeg:segments': 'The JPEG segments in file order, with their sizes and what each holds.',
+  'jpeg:ghost': 'The picture re-saved at every quality and compared with itself. One dip at the file\u2019s own quality is normal; a second dip at a lower quality is the ghost of an earlier save.',
+  'jpeg:ghost_map': 'Where the ghost lives: blocks that recompress unusually well at the earlier quality were saved at that quality before. Toggle it as an overlay on the picture.',
+  'jpeg:grid_profile': 'Edge energy at each of the 8 positions within a block, across and down. A JPEG grid makes position 0 stand out; a lossless file has a flat profile.',
+  'jpeg:grid_map': 'Tiles whose 8\u00d78 grid does not line up with the file\u2019s own grid. A pasted JPEG patch keeps its own alignment.',
+  'tamper:ela': 'Error-level analysis at the file\u2019s own quality: the picture is re-saved and compared with itself. Areas saved separately glow or go dark.',
+  'tamper:ela_raw': 'The error levels alone. Even grey everywhere means one JPEG generation.',
+  'tamper:noise': 'Sensor grain after allowing for brightness and texture. Bright patches have grain unlike the rest of the picture.',
+  'tamper:noise_view': 'The grain itself, amplified. It should look like even sand everywhere.',
+  'tamper:clone': 'Feature points (red) that reappear elsewhere (green) under one rigid motion, joined by lines, with both regions boxed.',
+  'tamper:resampling': 'The spectrum of the pixel-prediction error. A smooth cloud is a camera original; bright isolated dots are the rhythm of resizing or rotation.',
+  'tamper:histogram': 'How many pixels sit at each brightness level. A camera writes a smooth curve; contrast and level adjustments leave combs of gaps and spikes.',
+  'tamper:gradient': 'The direction light changes at every edge, as colour. Objects lit the same way share the same pattern.',
+  'tamper:pca': 'Colour variation the eye hardly sees. Edits made in another colour space, and halos around pasted objects, show here.',
+  'hidden:trailing': 'The bytes that follow the end of the image. Download them to inspect.',
+  'hidden:embedded': 'A whole second image stored after the main one (depth map, gain map, preview).',
+  'hidden:motion_photo': 'The movie clip stored inside the photo file.',
+  'hidden:lsb': 'Only the lowest bit of every pixel. Natural photos give structured noise; a hidden message gives uniform snow.',
+  'hidden:lsb_test': 'The chi-square pair test slice by slice from the top of the picture. A step from high to near zero is a sequentially written message.',
+  'hidden:under_alpha': 'The picture with transparency removed: whatever was stored under fully transparent pixels.',
+  'hidden:accounting': 'Where every byte of the file is: picture, labels, private blocks, trailing data.',
+  'faces:faces': 'Faces found by the detector. Red boxes are large and sharp enough to recognise; yellow are not.',
+  'faces:face': 'One face, cropped from the full-resolution picture.',
+  'faces:eyes': 'Both eyes enlarged with local contrast boosted. Reflections on the cornea show what was in front of the person.',
+  'synthetic:spectrum': 'Power at each spatial frequency, averaged around the centre. Camera optics give a smooth fall-off; upsampling networks leave bumps near the top.',
+  'synthetic:c2pa': 'The readable parts of the Content Credentials manifest signed into the file.',
+  'synthetic:recipe': 'The generation recipe stored in the file: prompt, seed, sampler, model.',
 }
 
 const KIND_EXPLAIN: Record<string, string> = {
@@ -364,6 +444,13 @@ export const GLOSSARY: Record<string, string> = {
   'grid 60 Hz': 'The Americas, parts of Japan and a few other places run their power at 60 Hz.',
   measured: 'Calculated directly from the file by a fixed method.',
   AI: 'Produced by an AI model. Useful leads, but it can be wrong.',
+  EXIF: 'The block of labels a camera writes into a photo: device, lens, exposure, date, GPS and more.',
+  XMP: 'Adobe\u2019s metadata format, where editors keep their edit history and creators their names.',
+  C2PA: 'Content Credentials: a signed record of how a file was made, written by generators and editors that support it.',
+  'JPEG ghost': 'Re-saving a picture at every quality and watching the error. An earlier save shows up as a dip at its own quality.',
+  quantisation: 'The table that decides how coarsely each frequency is stored in a JPEG. It fingerprints the encoder and its quality setting.',
+  LSB: 'Least significant bit: the lowest bit of each pixel value, where simple steganography tools hide messages.',
+  'copy-move': 'Cloning one part of a picture onto another, to hide or duplicate something.',
   'rolling shutter': 'Phone sensors read the image row by row, so fast flicker shows up as stripes.',
   ffprobe: 'A standard tool that reads the technical structure of video files.',
 }
@@ -380,7 +467,6 @@ export const DATA_LABEL: Record<string, string> = {
   place: 'Address / place',
   bpm: 'Heart rate',
   snr_db: 'Signal strength over noise',
-  box: 'Region in frame (x, y, w, h)',
   hz: 'Frequency',
   excess_db: 'Louder than surroundings by',
   presence: 'Present for',
@@ -402,7 +488,6 @@ export const DATA_LABEL: Record<string, string> = {
   rate: 'Sample rate',
   creation_time_utc: 'Created (UTC)',
   apple_creationdate: 'Apple creation date',
-  filename_local: 'Time in file name',
   duration_s: 'Duration',
   utc_offset_h: 'Time zone offset',
   offset_h: 'Time zone offset',
@@ -438,6 +523,75 @@ export const DATA_LABEL: Record<string, string> = {
   reason: 'Reason',
   index: 'Index',
   fps: 'Frame rate',
+  // ---- still photographs
+  box: 'Region of the picture',
+  source_box: 'Copied from',
+  shift_px: 'Moved by (x, y pixels)',
+  angle_deg: 'Rotated by',
+  scale: 'Scaled by',
+  of_pairs: 'Candidate matches considered',
+  quality: 'JPEG quality',
+  earlier_quality: 'Earlier save quality',
+  current_quality: 'This file\u2019s quality',
+  table_distance: 'Distance from standard tables',
+  standard_tables: 'Standard (libjpeg) tables',
+  sampling: 'Chroma subsampling',
+  progressive: 'Progressive',
+  optimised_huffman: 'Optimised Huffman tables',
+  bits_per_pixel: 'Bits per pixel',
+  restart_interval: 'Restart interval',
+  heading_deg: 'Camera pointed (compass)',
+  speed_kmh: 'Speed',
+  relative_deg: 'Sun relative to camera direction',
+  date_time_original: 'Taken (camera clock)',
+  date_time_digitized: 'Digitised',
+  modify_date: 'Modified',
+  offset_time_original: 'Time zone written by camera',
+  gps_time_utc: 'GPS clock (UTC)',
+  xmp_create_date: 'XMP create date',
+  xmp_modify_date: 'XMP modify date',
+  filename_local: 'Time in file name',
+  copy_stamp: 'Timestamp is a copy time',
+  correlation: 'Thumbnail similarity',
+  peak_block_difference: 'Largest local difference',
+  changed_blocks: 'Changed blocks',
+  exif_size: 'Size the camera recorded',
+  stored_size: 'Size stored now',
+  pixel_ratio: 'Pixels kept',
+  claim_generator: 'Signed by',
+  generator_name: 'Generator',
+  digital_source_type: 'Declared source type',
+  prompt: 'Prompt',
+  negative_prompt: 'Negative prompt',
+  seed: 'Seed',
+  steps: 'Steps',
+  sampler: 'Sampler',
+  cfg_scale: 'CFG scale',
+  noise_floor: 'Grain level',
+  peak_z: 'Peak strength (sigma)',
+  period_px: 'Repeats every',
+  gaps: 'Empty levels',
+  spikes: 'Over-full levels',
+  clipped_white: 'Pure white pixels',
+  clipped_black: 'Pure black pixels',
+  recognisable: 'Recognisable faces',
+  width_px: 'Face width',
+  sharpness: 'Sharpness',
+  faces: 'Faces',
+  names: 'Names tagged',
+  bytes: 'Size',
+  strings: 'Readable fragments',
+  channel_scores: 'Fraction equalised per channel',
+  transparent_fraction: 'Transparent area',
+  makernote: 'Maker notes',
+  lens: 'Lens',
+  exposure: 'Exposure',
+  signs: 'Encoder habits',
+  app_segments: 'Application segments',
+  history: 'Edit history',
+  identity: 'Identity fields',
+  corroborated_by: 'Agrees with',
+  regions: 'All regions',
 }
 
 /** Unit for a data key, from its suffix. */
@@ -468,12 +622,13 @@ export const SEVERITY: Record<string, { word: string; icon: string; tip: string 
   info: { word: 'Info', icon: 'circle-info', tip: 'Background fact about the file.' },
 }
 
-export type Verdict = 'edited' | 'possible' | 'clean' | 'running' | 'unknown'
+export type Verdict = 'edited' | 'possible' | 'clean' | 'synthetic' | 'running' | 'unknown'
 
 export const VERDICT: Record<Verdict, { word: string; short: string; icon: string; line: string }> = {
-  edited: { word: 'Edited', short: 'Edited', icon: 'scissors', line: 'Independent checks show this video was cut or altered.' },
+  edited: { word: 'Edited', short: 'Edited', icon: 'scissors', line: 'Independent checks show this file was cut or altered.' },
   possible: { word: 'Possibly edited', short: 'Suspect', icon: 'triangle-exclamation', line: 'Something does not add up, but it is not proven.' },
   clean: { word: 'No signs of editing', short: 'Clean', icon: 'circle-check', line: 'Nothing measured suggests a cut or alteration.' },
+  synthetic: { word: 'AI-generated', short: 'AI-made', icon: 'robot', line: 'The file itself declares it was made by an AI model.' },
   running: { word: 'Analysing', short: 'Analysing', icon: 'circle-notch', line: 'Checks are still running.' },
   unknown: { word: 'No verdict', short: 'No verdict', icon: 'circle-question', line: 'No summary was produced for this case.' },
 }
@@ -483,7 +638,15 @@ export function verdictOf(v: unknown): Verdict {
   if (s === 'EDITED') return 'edited'
   if (s === 'POSSIBLY EDITED') return 'possible'
   if (s === 'NO SIGNS OF EDITING') return 'clean'
+  if (s === 'AI-GENERATED') return 'synthetic'
   return 'unknown'
+}
+
+/** The word for the evidence: "video", "photo" or "recording". */
+export function mediaNoun(kind: string | null | undefined): 'video' | 'photo' | 'recording' {
+  if (kind === 'image') return 'photo'
+  if (kind === 'audio') return 'recording'
+  return 'video'
 }
 
 export const BULLET_LABEL: Record<string, string> = {

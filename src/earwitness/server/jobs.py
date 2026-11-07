@@ -72,6 +72,7 @@ class Case:
             "filename": self.filename,
             "created": self.created,
             "status": self.status,
+            "kind": (case_event["case"].get("kind") if case_event else None) or "video",
             "findings": len(findings),
             "warnings": sum(f["severity"] in ("warning", "critical") for f in findings),
             "case": case_event["case"] if case_event else None,
@@ -150,6 +151,24 @@ class CaseStore:
 
     def start(self, case: Case, *, only: list[str] | None = None) -> None:
         case.task = asyncio.create_task(run_case(case, only=only))
+
+
+def _image_proxy(case: Case, ctx: CaseContext) -> str | None:
+    """A browser-viewable, upright JPEG of the photo (HEIC/TIFF/16-bit need one) plus a thumbnail."""
+    from earwitness import photo
+
+    image = ctx.image()
+
+    if image is None:
+        return None
+
+    out = os.path.join(case.workdir, "proxy.jpg")
+    photo.save_jpeg(out, photo.fit(image, 3000), 92)
+    photo.save_jpeg(
+        os.path.join(case.workdir, "thumb.jpg"), photo.thumbnail_of(image, 480), 85
+    )
+
+    return out
 
 
 async def _make_proxy(case: Case) -> str | None:
@@ -244,17 +263,42 @@ async def _custody(case: "Case", probe: dict[str, Any]) -> dict[str, Any]:
         for s in probe.get("streams", [])
     ]
 
+    container = {
+        "format_name": fmt.get("format_name"),
+        "format_long_name": fmt.get("format_long_name"),
+        "bit_rate": _num(fmt.get("bit_rate")),
+        "size_bytes": _num(fmt.get("size")),
+        "duration_s": _num(fmt.get("duration")),
+    }
+
+    if not probe and case.ctx is not None and case.ctx.kind == "image":
+        info = case.ctx.image_info()
+
+        if info is not None:
+            container = {
+                "format_name": info.format.lower(),
+                "format_long_name": {
+                    "JPEG": "JPEG (Joint Photographic Experts Group)", "MPO": "JPEG multi-picture (MPO)",
+                    "PNG": "PNG (Portable Network Graphics)", "HEIF": "HEIF / HEIC (ISO base media, HEVC-coded picture)",
+                    "WEBP": "WebP", "TIFF": "TIFF", "GIF": "GIF", "BMP": "Windows bitmap", "AVIF": "AVIF",
+                }.get(info.format, info.format),
+                "bit_rate": None,
+                "size_bytes": float(os.path.getsize(case.evidence_path)),
+                "duration_s": None,
+            }  # fmt: skip
+            streams = [{
+                "index": 0, "type": "image", "codec": info.format.lower(), "codec_long": container["format_long_name"],
+                "profile": info.mode, "width": info.stored_width, "height": info.stored_height, "fps": None,
+                "pix_fmt": f"{info.mode} {info.bits}-bit", "color_range": None, "color_space": None, "bit_rate": None,
+                "sample_rate": None, "channels": None, "channel_layout": None, "language": None, "handler": None,
+                "duration_s": None, "frames": info.frames,
+            }]  # fmt: skip
+
     return {
         "sha256": sha256,
         "md5": md5,
         "ingested_at": case.created,
-        "container": {
-            "format_name": fmt.get("format_name"),
-            "format_long_name": fmt.get("format_long_name"),
-            "bit_rate": _num(fmt.get("bit_rate")),
-            "size_bytes": _num(fmt.get("size")),
-            "duration_s": _num(fmt.get("duration")),
-        },
+        "container": container,
         "streams": streams,
         "tags": tags,
     }
@@ -277,26 +321,49 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
     started_index = asyncio.create_task(_index(case))
     ctx = CaseContext(case.id, case.evidence_path, case.workdir, case.options)
     case.ctx = ctx
-    probe = await ctx.probe()
+    kind = ctx.kind
+    probe = await ctx.probe() if kind != "image" else {}
     info = await ctx.video_info()
-    has_audio = any(s.get("codec_type") == "audio" for s in probe.get("streams", []))
-    modules = [m for m in registry.all_modules() if only is None or m.name in only]
+    image_info = await asyncio.to_thread(ctx.image_info) if kind == "image" else None
 
-    # Modules not scheduled in this run count as finished with nothing to say,
-    # so anything waiting on them carries on immediately.
-    for other in registry.all_modules():
-        if other.name not in {m.name for m in modules}:
-            ctx.publish(other.name, None)
-    proxy_task = asyncio.create_task(_make_proxy(case))
-    await _thumbnail(case)
+    if kind == "image" and image_info is None:
+        # Not decodable as a picture after all: treat it as a generic media file.
+        kind = ctx.kind = "video"
+        probe = await ctx.probe()
+        info = await ctx.video_info()
+
+    has_audio = any(s.get("codec_type") == "audio" for s in probe.get("streams", []))
+    modules = [m for m in registry.all_modules(kind) if only is None or m.name in only]
+
+    # Modules not scheduled in this run (or that exist only for another media
+    # kind) count as finished with nothing to say, so anything waiting on them
+    # carries on immediately.
+    scheduled = {m.name for m in modules}
+
+    for other_kind in registry.kinds():
+        for other in registry.all_modules(other_kind):
+            if other.name not in scheduled:
+                ctx.publish(other.name, None)
+
+    if kind == "image":
+        proxy_task = asyncio.create_task(asyncio.to_thread(_image_proxy, case, ctx))
+        await proxy_task
+    else:
+        proxy_task = asyncio.create_task(_make_proxy(case))
+        await _thumbnail(case)
+
     case.emit(
         {
             "type": "case",
             "case": {
                 "id": case.id,
                 "filename": case.filename,
+                "kind": kind,
                 "duration_s": float(probe.get("format", {}).get("duration") or 0),
-                "size_bytes": int(probe.get("format", {}).get("size") or 0),
+                "size_bytes": int(
+                    probe.get("format", {}).get("size")
+                    or os.path.getsize(case.evidence_path)
+                ),
                 "has_audio": has_audio,
                 "video": None
                 if info is None
@@ -307,8 +374,23 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
                     "codec": info.codec,
                     "frames": info.frame_count,
                 },
+                "image": None
+                if image_info is None
+                else {
+                    "width": image_info.width,
+                    "height": image_info.height,
+                    "format": image_info.format,
+                    "mode": image_info.mode,
+                    "bits": image_info.bits,
+                    "frames": image_info.frames,
+                    "orientation": image_info.orientation,
+                    "megapixels": round(image_info.width * image_info.height / 1e6, 1),
+                },
                 "thumb_url": f"/api/cases/{case.id}/files/thumb.jpg",
-                "media_url": None,
+                "media_url": f"/api/cases/{case.id}/files/proxy.jpg"
+                if kind == "image"
+                else None,
+                "original_url": f"/api/cases/{case.id}/files/{os.path.basename(case.evidence_path)}",
                 **(await _custody(case, probe)),
                 "modules": [
                     {"name": m.name, "title": m.title, "description": m.description}
@@ -387,10 +469,11 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
 
     async def proxy() -> None:
         path = await proxy_task
+        name = "proxy.jpg" if kind == "image" else "proxy.mp4"
         case.emit(
             {
                 "type": "media",
-                "media_url": f"/api/cases/{case.id}/files/proxy.mp4" if path else None,
+                "media_url": f"/api/cases/{case.id}/files/{name}" if path else None,
             }
         )
 

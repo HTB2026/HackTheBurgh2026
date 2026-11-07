@@ -507,6 +507,773 @@ def _plain_answers(
     return answers
 
 
+# ---------------------------------------------------------------- photographs
+
+_ZONE_REGIONS = {
+    -10: "Hawaii",
+    -9: "Alaska",
+    -8: "the US and Canadian west coast or Mexico's Pacific coast",
+    -7: "the US Mountain states or western Mexico",
+    -6: "the central US, Mexico or Central America",
+    -5: "the US east coast, eastern Canada, Colombia or Peru",
+    -4: "Chile, Venezuela or the eastern Caribbean",
+    -3: "Brazil or Argentina",
+    0: "the UK, Ireland, Portugal or West Africa",
+    1: "western and central Europe or West Africa",
+    2: "eastern Europe, Israel, Egypt or South Africa",
+    3: "Turkey, Russia (Moscow), Saudi Arabia or East Africa",
+    3.5: "Iran",
+    4: "the UAE, Oman or the Caucasus",
+    5: "Pakistan or Uzbekistan",
+    5.5: "India or Sri Lanka",
+    6: "Bangladesh or Kazakhstan",
+    7: "Thailand, Vietnam or western Indonesia",
+    8: "China, Hong Kong, Taiwan, Singapore, Malaysia, the Philippines or Western Australia",
+    9: "Japan or Korea",
+    9.5: "central Australia",
+    10: "eastern Australia or Papua New Guinea",
+    11: "eastern Australia in summer or the Solomon Islands",
+    12: "New Zealand",
+}
+
+
+def _photo_answers(
+    findings: list[Finding], local: dict[str, Any]
+) -> list[dict[str, Any]]:
+    """The photograph in plain English: one question per card."""
+    by_title = lambda *prefixes: [f for f in findings if f.title.startswith(prefixes)]  # noqa: E731
+    answers = []
+    declared = [f for f in findings if "declared" in f.tags and "synthetic" in f.tags]
+    splices = [
+        f
+        for f in findings
+        if f.kind == "measured"
+        and f.severity in ("warning", "critical")
+        and {"splice", "clone"} & set(f.tags)
+    ]
+    thumbnail = by_title("Embedded thumbnail shows")
+    editors = [
+        f
+        for f in findings
+        if "editor" in f.tags and f.kind == "measured" and "synthetic" not in f.tags
+    ]
+    history = by_title("Edit history")
+    modified = by_title("Modified ")
+    resized = by_title("Resized or cropped")
+    resaved = [
+        f
+        for f in findings
+        if "resaved" in f.tags
+        or f.title.startswith(("Metadata stripped", "Processed by"))
+    ]
+    double = by_title("Compressed twice")
+    leads = [
+        f
+        for f in findings
+        if f.severity == "notice"
+        and ({"ela", "noise", "grid"} & set(f.tags))
+        and f.kind == "measured"
+    ]
+    camera_style = by_title("Encoder fingerprint: camera-style")
+    thumb_ok = by_title("Embedded thumbnail matches")
+    maker_notes = by_title("Maker notes from")
+    screenshot = by_title("This is a screenshot")
+
+    # ---- edited? -------------------------------------------------------------------------------
+    if declared:
+        what = (
+            declared[0].title.split(":", 1)[-1].strip()
+            if ":" in declared[0].title
+            else declared[0].title
+        )
+        answers.append(
+            _answer(
+                "edited",
+                "Has this photo been edited?",
+                f"This is not a camera photograph. The file itself declares it was made by an AI model ({what}).",
+                "strong",
+                declared[:2],
+            )
+        )
+    elif splices:
+        kinds = []
+
+        for f in splices:
+            label = ("part of the picture was copied and pasted within it" if "clone" in f.tags
+                     else "the preview the camera stored shows a different picture" if "thumbnail" in f.tags
+                     else "a region was pasted in from another JPEG" if "jpeg" in f.tags or "ela" in f.tags
+                     else "a region has grain unlike the rest" if "noise" in f.tags
+                     else "a region recompresses differently")  # fmt: skip
+
+            if label not in kinds:
+                kinds.append(label)
+
+        strong = (
+            len({f.module for f in splices}) >= 2
+            or any(f.severity == "critical" for f in splices)
+            or bool(thumbnail)
+        )
+        answers.append(
+            _answer(
+                "edited",
+                "Has this photo been edited?",
+                "Yes: " + "; ".join(kinds[:3]) + ".",
+                "strong" if strong else "moderate",
+                (thumbnail + splices)[:4],
+            )
+        )
+    elif history or (editors and (modified or resized)):
+        software = (
+            editors[0].title.removeprefix("Processed by ")
+            if editors
+            else history[0]
+            .data.get("history", [{}])[0]
+            .get("softwareAgent", "editing software")
+        )
+        steps = (
+            f" with {len(history[0].data.get('history', []))} recorded steps"
+            if history
+            else ""
+        )
+        when = (
+            f", {modified[0].title.removeprefix('Modified ').split(' after')[0]} after it was taken"
+            if modified
+            else ""
+        )
+        answers.append(
+            _answer(
+                "edited",
+                "Has this photo been edited?",
+                f"It was opened and saved in {software}{steps}{when}. The pixels show no paste or clone, so the edit may be a crop, a filter or a tone adjustment.",
+                "moderate",
+                (editors + history + modified + resized)[:4],
+            )
+        )
+    elif editors or resized or modified:
+        f = (editors or resized or modified)[0]
+        answers.append(
+            _answer(
+                "edited",
+                "Has this photo been edited?",
+                (
+                    "Resized or cropped after capture, with the camera's labels kept. "
+                    if resized
+                    else ""
+                )
+                + (
+                    f"Re-saved by {editors[0].title.removeprefix('Processed by ')}. "
+                    if editors
+                    else ""
+                )
+                + (
+                    "Its modification clock runs later than its capture clock. "
+                    if modified
+                    else ""
+                )
+                + "No paste, clone or compression inconsistency was found in the pixels.",
+                "moderate",
+                [f] + [x for x in editors + resized + modified if x is not f][:3],
+            )
+        )
+    elif double:
+        answers.append(
+            _answer(
+                "edited",
+                "Has this photo been edited?",
+                f"No change to the picture was found, but it was saved as a JPEG twice (an earlier save at quality about {double[0].data.get('earlier_quality')}), "
+                "so this is not the camera's original file."
+                + (
+                    f" {len(leads)} region{'s' if len(leads) != 1 else ''} look{'s' if len(leads) == 1 else ''} different from the rest without a second trace confirming a paste; see the maps."
+                    if leads
+                    else ""
+                ),
+                "moderate",
+                (double + leads)[:4],
+            )
+        )
+    elif resaved and not screenshot:
+        answers.append(
+            _answer(
+                "edited",
+                "Has this photo been edited?",
+                "No sign that the picture was changed, but this is not the camera's original file: it was re-encoded "
+                + (
+                    "and stripped of its camera labels "
+                    if any(f.title.startswith("Metadata stripped") for f in resaved)
+                    else ""
+                )
+                + "by another program, website or messaging app, which hides what came before.",
+                "moderate",
+                resaved[:3],
+            )
+        )
+    elif screenshot:
+        answers.append(
+            _answer(
+                "edited",
+                "Has this photo been edited?",
+                "This is a screenshot, so it was never a camera photograph. Nothing shows the screen content itself was altered after capture.",
+                "moderate",
+                screenshot[:1],
+            )
+        )
+    else:
+        checks = (
+            camera_style
+            + thumb_ok
+            + maker_notes
+            + by_title("No pasted", "No ghost", "No cloned")
+        )
+        answers.append(
+            _answer(
+                "edited",
+                "Has this photo been edited?",
+                "No signs of editing. The camera labels, compression, grain and pixels are all consistent with one capture saved once"
+                + (
+                    " and the camera's own preview matches the picture"
+                    if thumb_ok
+                    else ""
+                )
+                + "."
+                + (
+                    f" {len(leads)} region{'s' if len(leads) != 1 else ''} look{'s' if len(leads) == 1 else ''} slightly different from the rest, which strong texture or text usually explains; the maps show where."
+                    if leads
+                    else ""
+                ),
+                "strong"
+                if len(checks) >= 3
+                else "moderate"
+                if len(checks) >= 1
+                else "weak",
+                (checks + leads)[:4],
+            )
+        )
+
+    # ---- made by AI? -----------------------------------------------------------------
+    signals = by_title("2 weak", "3 weak", "4 weak", "5 weak", "One weak")
+    opinion = [f for f in findings if "ai-opinion" in f.tags]
+    likely = [f for f in opinion if f.severity in ("warning", "notice")]
+    none = by_title("No signs of AI generation")
+
+    if declared:
+        answers.append(
+            _answer(
+                "synthetic",
+                "Was it made by AI?",
+                "Yes. " + declared[0].detail.split(". ")[0] + ".",
+                "strong",
+                declared[:2],
+            )
+        )
+    elif likely and signals:
+        answers.append(
+            _answer(
+                "synthetic",
+                "Was it made by AI?",
+                "Possibly. "
+                + likely[0]
+                .detail.split(". ")[0]
+                .removeprefix("Judging from the picture alone: ")
+                + f"; and the file shows {signals[0].title.lower()}.",
+                "moderate",
+                likely[:1] + signals[:1],
+            )
+        )
+    elif likely:
+        answers.append(
+            _answer(
+                "synthetic",
+                "Was it made by AI?",
+                "Possibly, from the look of it alone: "
+                + likely[0]
+                .detail.split(". ")[0]
+                .removeprefix("Judging from the picture alone: ")
+                + ". The file carries no generator label.",
+                "weak",
+                likely[:1],
+            )
+        )
+    elif signals and signals[0].severity == "warning":
+        answers.append(
+            _answer(
+                "synthetic",
+                "Was it made by AI?",
+                "Some weak signs, no proof: "
+                + signals[0]
+                .detail.split(". ")[0]
+                .removeprefix("Nothing in the file declares a generator, but ")
+                + ".",
+                "weak",
+                signals[:1],
+            )
+        )
+    else:
+        answers.append(
+            _answer(
+                "synthetic",
+                "Was it made by AI?",
+                ("No signs. " if none else "Nothing points to it. ")
+                + "No Content Credentials or generator labels, and the pixels carry camera-like grain and spectrum"
+                + (
+                    ", which the AI eyewitness agrees with"
+                    if opinion and not likely
+                    else ""
+                )
+                + ".",
+                "moderate" if none and (camera_style or maker_notes) else "weak",
+                (none + opinion)[:2],
+            )
+        )
+
+    # ---- when? -----------------------------------------------------------------------
+    taken = by_title("Taken 20", "Taken 19")
+    zone = by_title("Local clock was UTC")
+    disagree = by_title(
+        "Camera clock and GPS clock disagree",
+        "Camera clock ",
+        "File name and camera clock disagree",
+    )
+    copy = by_title("Timestamp is when this copy was made")
+    weather_bad = by_title("Weather contradicts")
+
+    if taken:
+        when = taken[0].data.get("date_time_original") or taken[0].data.get(
+            "xmp_create_date"
+        )
+        moment = datetime.fromisoformat(str(when)) if when else None
+        tz_known = "UTC" in taken[0].title and "local clock" not in taken[0].title
+        text = (
+            f"{moment:%A %-d %B %Y at %H:%M}"
+            if moment
+            else taken[0].title.removeprefix("Taken ")
+        )
+        text += (
+            " local time"
+            if tz_known or zone
+            else " by the camera's clock (time zone unknown)"
+        )
+        corroborated = bool(zone) or bool(maker_notes) and tz_known
+        extra = ""
+
+        if zone:
+            extra = " The GPS receiver's clock confirms it to the second."
+        elif modified:
+            extra = f" The file was modified {modified[0].title.removeprefix('Modified ').split(' after')[0]} later."
+
+        if disagree:
+            extra += (
+                " Another clock in the file disagrees, so treat the date with care."
+            )
+
+        if weather_bad:
+            extra += " The recorded weather for that place and hour does not match the picture."
+
+        confidence = (
+            "weak"
+            if disagree or weather_bad
+            else "strong"
+            if corroborated
+            else "moderate"
+        )
+        answers.append(
+            _answer(
+                "when",
+                "When was it taken?",
+                f"{text}.{extra}",
+                confidence,
+                (taken + zone + disagree + modified + weather_bad)[:4],
+            )
+        )
+    elif copy:
+        answers.append(
+            _answer(
+                "when",
+                "When was it taken?",
+                "Unknown. The only date in the file is when this copy was saved, not when it was taken.",
+                "unknown",
+                copy[:1],
+            )
+        )
+    else:
+        answers.append(
+            _answer(
+                "when",
+                "When was it taken?",
+                "Not enough evidence. The file carries no capture date; whoever re-saved it removed it.",
+                "unknown",
+                by_title("Metadata stripped")[:1],
+            )
+        )
+
+    # ---- where? ----------------------------------------------------------------------------------------
+    gps = [f for f in findings if "gps" in f.tags]
+    caption_place = by_title("Place written in the caption")
+    postcode = [
+        f for f in findings if "text" in f.tags and "postcode" in f.title.lower()
+    ]
+    geo_guess = [
+        f
+        for f in findings
+        if f.module == "geo"
+        and f.title.startswith(("Pixels say", "Located", "Pixels suggest"))
+    ]
+    looks = [
+        f
+        for f in findings
+        if f.kind == "inferred"
+        and "location" in f.tags
+        and f.title.startswith("Looks like")
+    ]
+
+    if gps:
+        place = gps[0].data.get("place") or gps[0].title.split(": ", 1)[-1]
+        heading = gps[0].data.get("heading_deg")
+        facing = (
+            f", facing {_compass(heading)}" if isinstance(heading, (int, float)) else ""
+        )
+        copy_note = (
+            " This copy was re-saved, so check that the GPS was not added afterwards."
+            if copy
+            else ""
+        )
+        answers.append(
+            _answer(
+                "where",
+                "Where was it taken?",
+                f"{place}{facing}: the phone wrote its GPS position into the file.{copy_note}",
+                "moderate" if copy else "strong",
+                gps[:1],
+            )
+        )
+    elif geo_guess:
+        guess = geo_guess[0]
+        place = str(guess.data.get("place") or "").strip()
+        radius = float(guess.data.get("radius_km") or 0)
+        verified = bool(guess.data.get("verified"))
+
+        if radius >= 2500:
+            answers.append(
+                _answer(
+                    "where",
+                    "Where was it taken?",
+                    "Not enough evidence. Nothing in the picture narrows it down.",
+                    "unknown",
+                    [guess],
+                )
+            )
+        else:
+            answers.append(
+                _answer(
+                    "where",
+                    "Where was it taken?",
+                    f"{'Verified against reference photos and satellite imagery' if verified else 'Probably'}: {place} (within about {radius:.0f} km), judging only from what is visible.",
+                    "moderate" if verified else "weak",
+                    [guess],
+                )
+            )
+    elif caption_place:
+        answers.append(
+            _answer(
+                "where",
+                "Where was it taken?",
+                caption_place[0].title.split(": ", 1)[-1]
+                + ", according to the caption fields typed into the file.",
+                "moderate",
+                caption_place[:1],
+            )
+        )
+    elif postcode:
+        answers.append(
+            _answer(
+                "where",
+                "Where was it taken?",
+                f"Near postcode {postcode[0].data.get('value')}, which is readable in the picture.",
+                "moderate",
+                postcode[:1],
+            )
+        )
+    elif looks:
+        answer = re.sub(
+            r"\s*\((low|medium|high) confidence\)",
+            "",
+            looks[0].title.removeprefix("Looks like: "),
+        )
+        answers.append(
+            _answer(
+                "where",
+                "Where was it taken?",
+                f"{answer}, judging from what is visible.",
+                "weak",
+                looks[:1],
+            )
+        )
+    elif zone:
+        offset = float(zone[0].data.get("offset_h", 0))
+        region = _ZONE_REGIONS.get(offset) or _ZONE_REGIONS.get(round(offset))
+        answers.append(
+            _answer(
+                "where",
+                "Where was it taken?",
+                f"No GPS, but the phone's clock was set to UTC{offset:+g}"
+                + (f", which covers {region}" if region else "")
+                + ".",
+                "weak",
+                zone[:1],
+            )
+        )
+    else:
+        answers.append(
+            _answer(
+                "where",
+                "Where was it taken?",
+                "Not enough evidence. No GPS in the file and no recognisable clues in the picture.",
+                "unknown",
+                [],
+            )
+        )
+
+    # ---- device ----------------------------------------------------------------------------------------------
+    device = by_title("Taken on ")
+
+    if device:
+        lens = device[0].data.get("lens")
+        exposure = device[0].data.get("exposure")
+        answers.append(
+            _answer(
+                "device",
+                "What took it?",
+                device[0].title.removeprefix("Taken on ")
+                + (
+                    f" ({lens})"
+                    if lens and lens.lower() not in device[0].title.lower()
+                    else ""
+                )
+                + (f": {exposure}" if exposure else "")
+                + ".",
+                "strong" if maker_notes else "moderate",
+                (device + maker_notes)[:2],
+            )
+        )
+    elif screenshot:
+        answers.append(
+            _answer(
+                "device",
+                "What took it?",
+                "A screen capture, not a camera.",
+                "moderate",
+                screenshot[:1],
+            )
+        )
+
+    # ---- people -----------------------------------------------------------------------------------------------
+    faces = [
+        f
+        for f in findings
+        if f.module == "faces" and "face" in f.tags and "No faces" not in f.title
+    ]
+    names = [f for f in faces if "identity" in f.tags]
+    counted = [f for f in faces if "person" in f.tags]
+
+    if names:
+        answers.append(
+            _answer(
+                "people",
+                "Who is in it?",
+                f"The file names the people in it: {', '.join(names[0].data.get('names', [])[:3])}.",
+                "strong",
+                (names + counted)[:2],
+            )
+        )
+    elif counted:
+        recognisable = int(counted[0].data.get("recognisable") or 0)
+        total = len(counted[0].data.get("faces") or [])
+        answers.append(
+            _answer(
+                "people",
+                "Who is in it?",
+                f"{total} face{'s' if total != 1 else ''}, {recognisable} large and sharp enough to recognise."
+                if recognisable
+                else f"{total} face{'s' if total != 1 else ''}, none sharp enough to recognise.",
+                "moderate",
+                counted[:1],
+            )
+        )
+
+    # ---- hidden ------------------------------------------------------------------------------------------------
+    hidden = [
+        f
+        for f in findings
+        if {"hidden", "steganography", "identity"} & set(f.tags)
+        and f.severity in ("warning", "critical")
+        and "camera" not in f.tags
+    ]
+
+    if hidden:
+        bits = list(dict.fromkeys(f.title[0].lower() + f.title[1:] for f in hidden))
+        answers.append(
+            _answer(
+                "hidden",
+                "Anything hidden in the file?",
+                "Yes: " + "; ".join(bits[:4]) + ".",
+                "strong",
+                hidden[:4],
+            )
+        )
+    else:
+        answers.append(
+            _answer(
+                "hidden",
+                "Anything hidden in the file?",
+                "Nothing beyond the picture: no appended data, no hidden message, no personal details in the labels.",
+                "moderate",
+                by_title("Nothing hidden")[:1],
+            )
+        )
+
+    # ---- text --------------------------------------------------------------------------------------------------
+    readable = [
+        f
+        for f in findings
+        if f.module == "ocr" and f.severity in ("warning", "critical")
+    ]
+
+    if readable:
+        values = list(dict.fromkeys(f.title.split(": ", 1)[-1] for f in readable))
+        answers.append(
+            _answer(
+                "text",
+                "Any readable text or numbers?",
+                "Yes: " + "; ".join(values[:5]) + ".",
+                "moderate",
+                readable[:5],
+            )
+        )
+
+    return answers
+
+
+def _compass(deg: float) -> str:
+    names = [
+        "north",
+        "north-east",
+        "east",
+        "south-east",
+        "south",
+        "south-west",
+        "west",
+        "north-west",
+    ]
+
+    return names[int((deg % 360) / 45 + 0.5) % 8]
+
+
+def _local_brief_photo(findings: list[Finding]) -> dict[str, Any]:
+    serious = [
+        f
+        for f in findings
+        if f.severity in ("warning", "critical") and f.kind == "measured"
+    ]
+    declared = [f for f in findings if "declared" in f.tags and "synthetic" in f.tags]
+    splices = [f for f in serious if {"splice", "clone"} & set(f.tags)]
+    # Re-saves (double compression) say the file is not the original, not that
+    # the picture changed; they do not move the verdict.
+    edits_soft = [
+        f
+        for f in serious
+        if {"editor", "history", "modified", "resized"} & set(f.tags)
+        and "synthetic" not in f.tags
+    ]
+    synthetic_signals = [f for f in serious if "signals" in f.tags]
+
+    if declared:
+        verdict = "AI-GENERATED"
+    elif splices:
+        verdict = "EDITED"
+    elif edits_soft or synthetic_signals:
+        verdict = "POSSIBLY EDITED"
+    else:
+        verdict = "NO SIGNS OF EDITING"
+
+    bullets: list[str] = []
+    taken = [
+        f
+        for f in findings
+        if f.title.startswith("Taken 20") or f.title.startswith("Taken 19")
+    ]
+    zone = [f for f in findings if f.title.startswith("Local clock was UTC")]
+
+    if taken:
+        bullets.append(
+            f"WHEN: {taken[0].title} [{taken[0].id}]"
+            + (
+                f", confirmed by the GPS clock [{zone[0].id}]"
+                if zone
+                else ", from the camera's own labels"
+            )
+        )
+    else:
+        bullets.append("WHEN: no capture date in the file")
+
+    gps = _with(findings, "gps")
+    geo = [f for f in findings if f.module == "geo" and f.kind == "inferred"]
+    place_bits = [f"{f.title} [{f.id}]" for f in gps[:1]] + [
+        f"AI: {f.title} [{f.id}]" for f in geo[:1]
+    ]
+    bullets.append(
+        "WHERE: " + ("; ".join(place_bits) if place_bits else "no location evidence")
+    )
+    device = [f for f in findings if f.title.startswith("Taken on ")]
+
+    if device:
+        bullets.append(f"DEVICE: {device[0].title} [{device[0].id}]")
+
+    people = [f for f in findings if f.module == "faces" and "person" in f.tags]
+
+    if people:
+        bullets.append(f"PEOPLE: {people[0].title} [{people[0].id}]")
+
+    integrity = declared + splices + edits_soft
+
+    if integrity:
+        bullets.append(
+            "INTEGRITY: " + "; ".join(f"{f.title} [{f.id}]" for f in integrity[:6])
+        )
+    else:
+        bullets.append(
+            "INTEGRITY: metadata, compression tables, embedded thumbnail, grain and pixels show no edit"
+        )
+
+    hidden = [
+        f
+        for f in findings
+        if {"hidden", "steganography", "identity"} & set(f.tags)
+        and f.severity != "info"
+    ]
+
+    if hidden:
+        bullets.append(
+            "HIDDEN: " + "; ".join(f"{f.title} [{f.id}]" for f in hidden[:4])
+        )
+
+    # Two independent traces on the same region make the paste claim strong.
+    modules = {f.module for f in splices}
+
+    if len(modules) >= 2 or any(
+        "corroborated_by" in f.data and f.data["corroborated_by"] for f in splices
+    ):
+        bullets.append(
+            "CORROBORATED: two independent pixel traces mark the same region"
+        )
+
+    return {
+        "verdict": verdict,
+        "bullets": bullets,
+        "text": f"VERDICT: {verdict}.\n" + "\n".join(bullets),
+        "corroborated": len(modules) >= 2,
+        "corroborated_at": None,
+    }
+
+
 def _summary_plain(answers: list[dict[str, Any]]) -> str:
     edited = next(a for a in answers if a["key"] == "edited")
     when = next(
@@ -750,9 +1517,11 @@ class Brief:
 
     async def run(self, ctx: CaseContext, out: Reporter) -> None:
         findings = list(ctx.findings)
-        local = _local_brief(findings)
+        still = ctx.kind == "image"
+        noun = "photo" if still else "video"
+        local = _local_brief_photo(findings) if still else _local_brief(findings)
 
-        if local["corroborated"]:
+        if local["corroborated"] and not still:
             out.finding(
                 "critical",
                 "Edit corroborated by sound and picture",
@@ -763,7 +1532,12 @@ class Brief:
             )
 
         data: dict[str, Any] = dict(local)
-        data["answers"] = _plain_answers(ctx.findings, local)
+        data["kind"] = ctx.kind
+        data["answers"] = (
+            _photo_answers(ctx.findings, local)
+            if still
+            else _plain_answers(ctx.findings, local)
+        )
         data["summary_plain"] = _summary_plain(data["answers"])
 
         if openai_client.enabled() and findings:
@@ -778,7 +1552,7 @@ class Brief:
                 narrative = await openai_client.structured(
                     ctx.workdir,
                     instructions=(
-                        "You write the summary of a video-forensics case file for a non-expert. Use ONLY "
+                        f"You write the summary of a {noun}-forensics case file for a non-expert. Use ONLY "
                         "the findings given; cite their ids in brackets. Distinguish measured findings "
                         "from AI-inferred ones. Do not overstate: weak evidence is weak. The rule-based "
                         f"verdict is '{local['verdict']}'; agree with it unless the findings clearly contradict it."
@@ -805,7 +1579,9 @@ class Brief:
             try:
                 dossier = await openai_client.structured(
                     ctx.workdir,
-                    instructions=_DOSSIER,
+                    instructions=_DOSSIER.replace("this video", f"this {noun}").replace(
+                        "filmed it", "took it" if still else "filmed it"
+                    ),
                     content=[
                         {
                             "type": "input_text",
@@ -831,7 +1607,7 @@ class Brief:
                 )
                 dossier["heart_bpm"] = bpm
                 out.artifact(
-                    "dossier", "dossier", "What this video gives away", data=dossier
+                    "dossier", "dossier", f"What this {noun} gives away", data=dossier
                 )
             except Exception as error:  # noqa: BLE001 - optional
                 out.log(f"dossier unavailable: {error}")

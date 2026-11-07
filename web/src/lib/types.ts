@@ -2,11 +2,13 @@
 
 export type Severity = 'info' | 'notice' | 'warning' | 'critical'
 export type ModuleStatus = 'queued' | 'waiting' | 'running' | 'done' | 'skipped' | 'error'
+export type MediaKind = 'video' | 'image' | 'audio'
 
 export interface ModuleInfo {
   name: string
   title: string
   description: string
+  kind?: MediaKind
 }
 
 export interface VideoInfo {
@@ -17,15 +19,29 @@ export interface VideoInfo {
   frames: number
 }
 
+export interface ImageInfo {
+  width: number
+  height: number
+  format: string
+  mode: string
+  bits: number
+  frames: number
+  orientation: number
+  megapixels: number
+}
+
 export interface CaseInfo {
   id: string
   filename: string
+  kind?: MediaKind
   duration_s: number
   size_bytes: number
   has_audio: boolean
   video: VideoInfo | null
+  image?: ImageInfo | null
   thumb_url: string | null
   media_url: string | null
+  original_url?: string | null
   modules: ModuleInfo[]
   // newer backends; optional on older cases
   sha256?: string
@@ -77,11 +93,20 @@ export interface CaseSummary {
   filename: string
   created: number
   status: 'queued' | 'running' | 'done' | 'interrupted' | string
+  kind?: MediaKind
   findings: number
   warnings: number
   verdict?: string | null
   summary_plain?: string | null
   case: CaseInfo | null
+}
+
+/** A region of a still picture, as fractions 0..1 of its width and height. */
+export interface Box {
+  x: number
+  y: number
+  w: number
+  h: number
 }
 
 export interface Finding {
@@ -138,6 +163,13 @@ export interface Health {
   ok: boolean
   openai: boolean
   modules: ModuleInfo[]
+  image_modules?: ModuleInfo[]
+}
+
+export interface Lens {
+  name: string
+  url: string
+  caption: string
 }
 
 export interface EnhanceResult {
@@ -147,4 +179,15 @@ export interface EnhanceResult {
   scale: number
   source_px: [number, number]
   time_s: number
+  kind?: MediaKind
+  lenses?: Lens[]
+}
+
+/** The box a finding points at, if it has one (still pictures). */
+export function boxOf(f: { data?: unknown } | null | undefined): Box | null {
+  const d = (f as { data?: Record<string, unknown> } | null | undefined)?.data
+  const b = d?.box as Partial<Box> | undefined
+  if (!b || typeof b.x !== 'number' || typeof b.y !== 'number' || typeof b.w !== 'number' || typeof b.h !== 'number') return null
+  if (b.w <= 0 || b.h <= 0) return null
+  return { x: b.x, y: b.y, w: b.w, h: b.h }
 }

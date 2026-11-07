@@ -69,7 +69,11 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
         <p className="muted small mono">{c.id}</p>
         {summary && <p className="card-summary">{summary}</p>}
         <div className="card-meta">
-          {c.case?.duration_s ? (
+          {c.case?.image ? (
+            <span data-tip="Picture size">
+              <Icon name="image" /> {c.case.image.megapixels} MP
+            </span>
+          ) : c.case?.duration_s ? (
             <span data-tip="Length">
               <Icon name="clock" /> {mmss(c.case.duration_s)}
             </span>
@@ -195,7 +199,7 @@ export function Landing({ examine }: { examine?: boolean }) {
   }
 
   const remove = async (c: CaseSummary) => {
-    if (!confirm(`Delete the case for ${c.filename}? Its copy of the video and all results are removed. This cannot be undone.`)) return
+    if (!confirm(`Delete the case for ${c.filename}? Its copy of the file and all results are removed. This cannot be undone.`)) return
     await api.remove(c.id).catch(() => null)
     refresh()
   }
@@ -229,13 +233,13 @@ export function Landing({ examine }: { examine?: boolean }) {
       <section className="hero" style={latest?.case?.thumb_url ? { backgroundImage: `url(${latest.case.thumb_url})` } : undefined}>
         <div className="hero-inner">
           <div className="hero-text">
-            <h1>Every video is a witness.</h1>
+            <h1>Every photo and video is a witness.</h1>
             <p>
-              Drop in any video. We'll tell you where it was filmed, when, on what, and what it isn't telling you.
+              Drop in any video or photograph. We'll tell you where it was taken, when, on what, who is in it, and what the file isn't telling you.
             </p>
             <div className="hero-actions">
               <button className="btn btn-red" onClick={() => fileInput.current?.click()} disabled={!!upload}>
-                <Icon name="magnifying-glass" /> Examine a video
+                <Icon name="magnifying-glass" /> Examine a video or photo
               </button>
               <a className="btn dark" href="#/how">
                 <Icon name="circle-question" /> How it works
@@ -264,17 +268,20 @@ export function Landing({ examine }: { examine?: boolean }) {
           </b>
           Edits caught
         </div>
-        <div className="c-teal" data-tip="Independent checks run on every video">
+        <div className="c-teal" data-tip="Independent checks: one set for video, one for photographs">
           <Icon name="list-check" />
-          <b>{health ? health.modules.length : offline ? '—' : '…'}</b>
+          <b>
+            {health ? health.modules.length : offline ? '—' : '…'}
+            {health?.image_modules ? <small> + {health.image_modules.length} for photos</small> : null}
+          </b>
           Checks per video
         </div>
       </div>
 
       <div className="home">
         <div className="home-main">
-          <SectionTitle icon="file-video" accent="red" small="Video, audio or a photo. Checks start straight away.">
-            Examine a video
+          <SectionTitle icon="file-video" accent="red" small="Video, audio or a photograph (JPEG, HEIC, PNG, WebP, TIFF). Checks start straight away.">
+            Examine a video or photo
           </SectionTitle>
           <div
             ref={dropRef}
@@ -346,7 +353,7 @@ export function Landing({ examine }: { examine?: boolean }) {
               ))}
             </div>
           ) : cases.length === 0 ? (
-            <Empty icon="folder-open">No cases yet. Examine a video to open the first file.</Empty>
+            <Empty icon="folder-open">No cases yet. Examine a video or photo to open the first file.</Empty>
           ) : (
             <div className="cards">
               {cases.map((c) => (
@@ -363,7 +370,7 @@ export function Landing({ examine }: { examine?: boolean }) {
           <ul className="links panel c-green">
             <li>
               <button onClick={() => fileInput.current?.click()}>
-                Examine your first video <small>MP4, MOV, WebM…</small>
+                Examine your first file <small>MP4, MOV, JPEG, HEIC, PNG…</small>
               </button>
             </li>
             <li>
@@ -387,13 +394,16 @@ export function Landing({ examine }: { examine?: boolean }) {
             What it can detect
           </SectionTitle>
           <ul className="detect panel c-red">
-            {(health?.modules ?? []).map((m) => {
+            {[...(health?.modules ?? []), ...(health?.image_modules ?? []).filter((m) => !(health?.modules ?? []).some((v) => v.name === m.name && v.title === m.title))].map((m) => {
               const p = modulePlain(m.name, m.title)
               return (
-                <li key={m.name} className={`c-${p.accent}`} data-tip={p.does}>
+                <li key={`${m.kind ?? 'video'}:${m.name}`} className={`c-${p.accent}`} data-tip={p.does}>
                   <Icon name={p.icon} />
                   <div>
-                    <b>{p.name}</b>
+                    <b>
+                      {p.name}
+                      {m.kind === 'image' && <small className="kind-tag">photo</small>}
+                    </b>
                     <span className="muted small">{p.reveals || m.description}</span>
                   </div>
                 </li>

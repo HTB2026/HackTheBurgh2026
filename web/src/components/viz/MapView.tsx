@@ -7,6 +7,20 @@ export interface MapPoint {
   label?: string
   accuracy_m?: number
   kind?: string
+  /** compass direction the camera pointed, degrees from north (still photos) */
+  heading_deg?: number | null
+}
+
+/** A wedge of `spread` degrees either side of `heading`, `length_m` long, as lat/lon vertices. */
+function wedge(lat: number, lon: number, heading: number, length_m: number, spread = 25, steps = 12): [number, number][] {
+  const out: [number, number][] = [[lat, lon]]
+  const dLat = length_m / 111_320
+  const dLon = length_m / (111_320 * Math.max(0.2, Math.cos((lat * Math.PI) / 180)))
+  for (let i = 0; i <= steps; i++) {
+    const a = ((heading - spread + (2 * spread * i) / steps) * Math.PI) / 180
+    out.push([lat + dLat * Math.cos(a), lon + dLon * Math.sin(a)])
+  }
+  return out
 }
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[c]!)
@@ -113,6 +127,12 @@ export function MapView({ points, height = 360 }: { points: MapPoint[]; height?:
         if (!ai || pts.length === 1 || p.accuracy_m < 50_000) bounds.extend(ll.toBounds(p.accuracy_m * 2))
       }
       bounds.extend(ll)
+      if (typeof p.heading_deg === 'number' && isFinite(p.heading_deg) && !ai) {
+        const length = Math.max(60, Math.min(400, (p.accuracy_m ?? 30) * 4))
+        L.polygon(wedge(p.lat, p.lon, p.heading_deg, length), { color: '#ff4040', weight: 1, fillColor: '#ff4040', fillOpacity: 0.25 })
+          .bindTooltip(`Camera pointed ${Math.round(p.heading_deg)}°: the scene lies this way`, { direction: 'top' })
+          .addTo(g)
+      }
       L.marker(ll, {
         icon: L.divIcon({ className: '', html: `<div class="map-pin ${ai ? 'ai' : ''}"></div>`, iconSize: [18, 18], iconAnchor: [9, 9] }),
       })

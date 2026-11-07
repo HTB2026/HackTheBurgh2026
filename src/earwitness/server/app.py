@@ -70,7 +70,7 @@ class PathCase(BaseModel):
 
 
 class EnhanceRequest(BaseModel):
-    time_s: float
+    time_s: float = 0.0
     x: float
     y: float
     w: float
@@ -89,14 +89,17 @@ def _case(case_id: str):
 
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
+    describe = lambda kind: [  # noqa: E731
+        {"name": m.name, "title": m.title, "description": m.description, "kind": kind}
+        for m in registry.all_modules(kind)
+    ]
+
     return {
         "ok": True,
         "openai": bool(os.environ.get("OPENAI_API_KEY")),
         "database": await db.health(),
-        "modules": [
-            {"name": m.name, "title": m.title, "description": m.description}
-            for m in registry.all_modules()
-        ],
+        "modules": describe("video"),
+        "image_modules": describe("image"),
     }
 
 

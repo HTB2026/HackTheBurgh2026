@@ -287,6 +287,8 @@ const TOPIC_ORDER: { key: TabKey; label: string }[] = [
   { key: 'sound', label: 'Sound' },
   { key: 'light', label: 'Light' },
   { key: 'picture', label: 'Picture' },
+  { key: 'compression', label: 'Compression' },
+  { key: 'hidden', label: 'Hidden data' },
   { key: 'people', label: 'People' },
   { key: 'place', label: 'Place' },
   { key: 'text', label: 'Text & speech' },
@@ -339,7 +341,7 @@ export function mapPoints(state: CaseState, facts: Facts): MapPoint[] {
     const cls = (k?: string) => (k === 'ai' || k === 'inferred' ? 'ai' : k === 'ai-candidate' ? 'lead' : 'gps')
     if (!out.some((q) => Math.abs(q.lat - p.lat) < 1e-4 && Math.abs(q.lon - p.lon) < 1e-4 && cls(q.kind) === cls(p.kind))) out.push(p)
   }
-  if (facts.gps) add({ lat: facts.gps.lat, lon: facts.gps.lon, accuracy_m: facts.gps.accuracy_m, label: 'GPS stored in the file', kind: 'gps' })
+  if (facts.gps) add({ lat: facts.gps.lat, lon: facts.gps.lon, accuracy_m: facts.gps.accuracy_m, label: 'GPS stored in the file', kind: 'gps', heading_deg: facts.gps.heading_deg ?? null })
   for (const a of arts(state).filter((x) => x.kind === 'map')) for (const p of a.data?.points ?? []) if (isFinite(p?.lat) && isFinite(p?.lon)) add(p)
   for (const f of state.findings) {
     const lat = f.data?.latitude
@@ -356,7 +358,7 @@ export function MapSection({ points, gps }: { points: MapPoint[]; gps: Facts['gp
       {gps && (
         <p className="map-note">
           <Icon name="location-crosshairs" className="c-red-i" /> This file carries its own GPS position{gps.place ? `: ${gps.place}` : ''}. Anyone with the
-          file can see it.
+          file can see it.{typeof gps.heading_deg === 'number' ? ` The red wedge shows which way the camera pointed (${Math.round(gps.heading_deg)}°).` : ''}
         </p>
       )}
       <p className="muted small">
@@ -455,23 +457,38 @@ function TagTable({ tags }: { tags: Record<string, string | number> }) {
 export function EvidenceFile({ state, facts, caseId }: { state: CaseState; facts: Facts; caseId: string }) {
   const info = state.info!
   const v = info.video
+  const im = info.image
+  const still = facts.kind === 'image'
   const fileArts = arts(state).filter((a) => artifactTab(a) === 'file')
   const facts2: [string, ReactNode, string?][] = [
     ['Case number', <span className="mono">{caseId}</span>],
     ['Original file name', info.filename],
     ['Size', `${bytes(info.size_bytes)} (${info.size_bytes?.toLocaleString('en-GB')} bytes)`],
     ['Received', info.ingested_at ? niceDate(new Date(info.ingested_at * 1000).toISOString()) : 'Not recorded'],
-    ['Duration', mmss(info.duration_s)],
-    ['Picture', v ? `${v.width} × ${v.height}, ${Math.round(v.fps * 100) / 100} fps, ${v.codec.toUpperCase()}, ${v.frames?.toLocaleString('en-GB')} frames` : 'None', GLOSSARY.codec],
-    ['Sound', info.has_audio ? 'Yes' : 'None'],
+    ...(still
+      ? ([
+          ['Picture', im ? `${im.width} × ${im.height} px (${im.megapixels} megapixels), ${im.format}, ${im.mode} ${im.bits}-bit${im.frames > 1 ? `, ${im.frames} frames` : ''}${im.orientation !== 1 ? `, stored rotated (orientation ${im.orientation})` : ''}` : 'Not decoded'],
+          ['JPEG quality', facts.quality != null ? `about ${facts.quality} (libjpeg scale)` : im?.format === 'JPEG' || im?.format === 'MPO' ? 'Not estimated' : 'Not a JPEG', GLOSSARY.quantisation],
+          ['Faces', facts.faces ? `${facts.faces.total} found, ${facts.faces.recognisable} recognisable` : 'None found'],
+          ['Declared generator', facts.generator ?? 'None'],
+        ] as [string, ReactNode, string?][])
+      : ([
+          ['Duration', mmss(info.duration_s)],
+          ['Picture', v ? `${v.width} × ${v.height}, ${Math.round(v.fps * 100) / 100} fps, ${v.codec.toUpperCase()}, ${v.frames?.toLocaleString('en-GB')} frames` : 'None', GLOSSARY.codec],
+          ['Sound', info.has_audio ? 'Yes' : 'None'],
+        ] as [string, ReactNode, string?][])),
     ['Container', info.container?.format_long_name ?? info.container?.format_name ?? 'Not recorded', GLOSSARY.container],
     ['Device', facts.device ? `${facts.device}${facts.software ? ` (software ${facts.software})` : ''}` : 'Not stated in the file'],
-    ['Recorded (claimed)', facts.recorded ? niceDate(facts.recorded) : 'Not stated', 'From the file’s own clock, which can be wrong or edited.'],
-    ['GPS', facts.gps ? `${facts.gps.lat.toFixed(5)}, ${facts.gps.lon.toFixed(5)}${facts.gps.accuracy_m ? ` (${radiusText(facts.gps.accuracy_m)})` : ''}` : 'None'],
+    [still ? 'Taken (claimed)' : 'Recorded (claimed)', facts.recorded ? niceDate(facts.recorded) : 'Not stated', 'From the file’s own clock, which can be wrong or edited.'],
+    ['GPS', facts.gps ? `${facts.gps.lat.toFixed(5)}, ${facts.gps.lon.toFixed(5)}${facts.gps.accuracy_m ? ` (${radiusText(facts.gps.accuracy_m)})` : ''}${typeof facts.gps.heading_deg === 'number' ? `, camera pointed ${Math.round(facts.gps.heading_deg)}°` : ''}` : 'None'],
     ['Re-saved by', facts.resaved ?? 'No sign of re-saving software'],
-    ['Power grid', facts.grid ? `${facts.grid} Hz` : 'Not detected', GLOSSARY.ENF],
-    ['Heart rate', facts.pulse ? `about ${facts.pulse} bpm` : 'Not measured', GLOSSARY.rPPG],
-    ['Speech', facts.language ?? 'None found'],
+    ...(still
+      ? ([] as [string, ReactNode, string?][])
+      : ([
+          ['Power grid', facts.grid ? `${facts.grid} Hz` : 'Not detected', GLOSSARY.ENF],
+          ['Heart rate', facts.pulse ? `about ${facts.pulse} bpm` : 'Not measured', GLOSSARY.rPPG],
+          ['Speech', facts.language ?? 'None found'],
+        ] as [string, ReactNode, string?][])),
     ['AI used', facts.aiUsed ? 'Yes; AI results are labelled' : 'No'],
   ]
   return (

@@ -65,7 +65,7 @@ export function App() {
       )}
       <footer className="foot">
         <div className="wrap">
-          <span>EARWITNESS · video forensics</span>
+          <span>EARWITNESS · video and photo forensics</span>
           <span className="faint">Findings are leads, not proof. Labels marked AI come from a model and can be wrong.</span>
         </div>
       </footer>

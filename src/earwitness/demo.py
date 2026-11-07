@@ -335,6 +335,70 @@ async def build_pack(out_dir: str) -> list[dict[str, object]]:
         }
     )
 
+    # ---- photographs ----------------------------------------------------------------------
+    from earwitness import demo_photo
+
+    photos = os.path.join(out_dir, "photos")
+    os.makedirs(photos, exist_ok=True)
+    pack.append(
+        {
+            "file": demo_photo.clean_photo(
+                os.path.join(photos, "10_camera_original.jpg")
+            ),
+            "hidden": [
+                "nothing: a camera-style JPEG with full EXIF, GPS fix facing SE, GPS clock one hour behind the local clock (UTC+1), matching thumbnail",
+            ],
+        }
+    )
+    clone_x, clone_y, clone_w, clone_h = demo_photo.PLANTED["clone_box"]
+    pack.append(
+        {
+            "file": demo_photo.edited_photo(os.path.join(photos, "11_edited.jpg")),
+            "hidden": [
+                f"copy-move: the {clone_w}x{clone_h} patch at ({clone_x}, {clone_y}) stamped {demo_photo.PLANTED['clone_offset']} px away",
+                f"pasted region {demo_photo.PLANTED['paste_box']} from a quality-{demo_photo.PLANTED['paste_quality']} JPEG (grid-aligned: JPEG ghost)",
+                f"pasted region {demo_photo.PLANTED['paste2_box']} from a quality-{demo_photo.PLANTED['paste2_quality']} JPEG, 3 px off the 8x8 grid",
+                "house number 3 painted over with ground",
+                "EXIF thumbnail still shows the unedited picture",
+                "software tag 'PhotoFix Pro 4.2'",
+                "a ZIP archive (secret.txt) appended after the JPEG end marker",
+            ],
+        }
+    )
+    pack.append(
+        {
+            "file": demo_photo.generated_png(os.path.join(photos, "12_generated.png")),
+            "hidden": [
+                "Stable Diffusion recipe (prompt, seed, model) in the PNG 'parameters' chunk"
+            ],
+        }
+    )
+    pack.append(
+        {
+            "file": demo_photo.stego_png(os.path.join(photos, "13_stego.png")),
+            "hidden": [
+                "LSB-embedded message (encrypted payload) over the first 45% of the pixels",
+                "a different picture under the fully transparent right third",
+            ],
+        }
+    )
+    pack.append(
+        {
+            "file": demo_photo.motion_photo(os.path.join(photos, "14_motion.jpg")),
+            "hidden": ["an MP4 container appended after the JPEG (motion photo)"],
+        }
+    )
+    pack.append(
+        {
+            "file": demo_photo.png_was_jpeg(
+                os.path.join(photos, "15_png_was_jpeg.png")
+            ),
+            "hidden": [
+                "lossless PNG that was a quality-60 JPEG: the 8x8 grid survives"
+            ],
+        }
+    )
+
     with open(os.path.join(out_dir, "MANIFEST.json"), "w") as handle:
         json.dump(pack, handle, indent=2)
 

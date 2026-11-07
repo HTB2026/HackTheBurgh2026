@@ -25,7 +25,7 @@ export const api = {
     }).then((r) => json<CaseSummary>(r)),
   remove: (id: string) => fetch(`/api/cases/${id}`, { method: 'DELETE' }).then((r) => json<{ deleted: boolean }>(r)),
   rerun: (id: string) => fetch(`/api/cases/${id}/rerun`, { method: 'POST' }).then((r) => json<CaseSummary>(r)),
-  enhance: (id: string, body: { time_s: number; x: number; y: number; w: number; h: number; frames?: number }) =>
+  enhance: (id: string, body: { time_s?: number; x: number; y: number; w: number; h: number; frames?: number }) =>
     fetch(`/api/cases/${id}/enhance`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
