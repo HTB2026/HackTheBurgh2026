@@ -1,0 +1,15 @@
+{
+  "start": "2026-11-07T14:00:00+00:00",
+  "latitude": 55.94820084649444,
+  "longitude": -3.1684781493317304,
+  "origin": [
+    55.9533,
+    -3.1883
+  ],
+  "ground_height_m": 100.0,
+  "splice_at_s": 150.0,
+  "audible_aircraft": [
+    "LOG24",
+    "EZY61"
+  ]
+}

@@ -1,0 +1,6 @@
+{
+  "4d0a0cbf94ea5209ce9fafcbe5a36309.mp4": {"edited": false, "place": "London Eye, New Year fireworks", "lat": 51.5033, "lon": -0.1196, "source": "London Eye visible in frame"},
+  "fa19befb142b385455c751cfd85afed3.mp4": {"edited": false, "place": "Gulangyu, Xiamen", "lat": 24.4475, "lon": 118.0640, "source": "user"},
+  "ffe34fc227d09ed89865bde8cd6c66af.mp4": {"edited": false, "place": "McEwan Hall, Bristo Square, Edinburgh", "lat": 55.9458, "lon": -3.1886, "source": "GPS tag + visible building"},
+  "IMG_1261.MOV": {"edited": false, "place": "Edinburgh (hackathon)", "lat": 55.9229, "lon": -3.1737, "source": "GPS tag"}
+}

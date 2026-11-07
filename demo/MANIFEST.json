@@ -1,0 +1,55 @@
+[
+  {
+    "file": "demo/01_planted.mp4",
+    "hidden": [
+      "18.5 kHz ultrasonic tone (inaudible)",
+      "DTMF keypad tones '1984#' at 4.0 s",
+      "0.3 s of digital silence at 12.0 s",
+      "hard cut + room-tone jump at 20.0 s (corroborated edit)",
+      "72 bpm pulse in the skin patch"
+    ]
+  },
+  {
+    "file": "demo/02_cloned.mp4",
+    "hidden": [
+      "copy-move forgery: top-right patch stamped bottom-left"
+    ]
+  },
+  {
+    "file": "demo/03_dubbed.mp4",
+    "hidden": [
+      "soundtrack shifted 250 ms late"
+    ]
+  },
+  {
+    "file": "demo/04_lamps_50hz.mp4",
+    "hidden": [
+      "100 Hz lamp flicker -> 50 Hz grid (Europe/GB)",
+      "20 ms sensor readout"
+    ]
+  },
+  {
+    "file": "demo/05_lamps_60hz.mp4",
+    "hidden": [
+      "120 Hz lamp flicker -> 60 Hz grid (Americas)"
+    ]
+  },
+  {
+    "file": "demo/06_lamps_dated.mp4",
+    "hidden": [
+      "lamps follow the real GB grid of 2024-03-12 23:10:00 UTC",
+      "metadata deliberately claims 20 minutes later"
+    ]
+  },
+  {
+    "file": "demo/07_hum/spliced.mp4",
+    "options": {
+      "grid_path": "demo/07_hum/grid.csv"
+    },
+    "hidden": [
+      "mains hum dated 2026-11-07T14:00:00+00:00 against grid.csv",
+      "second half recorded 30 min later, splice at 150.0 s",
+      "two aircraft Doppler sweeps"
+    ]
+  }
+]
