@@ -7,6 +7,7 @@ AI analyst sees in the frames. Rain in the record and a dry, sunny video (or
 the reverse) means the claimed time or place is wrong.
 """
 
+import re
 from datetime import datetime
 from datetime import timedelta
 from datetime import timezone
@@ -28,6 +29,22 @@ _CODES = {
 }  # fmt: skip
 _WET_WORDS = ("rain", "wet", "drizzle", "puddle", "umbrella", "snow", "shower", "storm")
 _DRY_WORDS = ("dry", "sunny", "clear sky", "clear, ", "bright sun")
+
+
+_NEGATED = re.compile(
+    r"\b(no|not|without|isn't|aren't|nor|never|free of)\b(\s+\w+){0,3}?\s+"
+    r"(rain\w*|wet|drizzle|puddles?|umbrellas?|snow\w*|showers?|storms?)\b"
+)
+
+
+def _seen_conditions(seen: str) -> tuple[bool, bool]:
+    """(looks wet, looks dry) from the analyst's words, ignoring negations
+    such as "no visible rain" or "not raining"."""
+    text = _NEGATED.sub(" ", seen.lower())
+    wet = any(w in text for w in _WET_WORDS)
+    dry = (any(w in text for w in _DRY_WORDS) or "dry" in text) and not wet
+
+    return wet, dry
 
 
 async def _hourly(lat: float, lon: float, when: datetime) -> dict[str, Any] | None:
@@ -123,8 +140,7 @@ class Weather:
             float(record.get("precipitation") or 0) == 0
             and int(record.get("weather_code") or 0) <= 2
         )
-        wet_seen = any(w in seen for w in _WET_WORDS)
-        dry_seen = any(w in seen for w in _DRY_WORDS) and not wet_seen
+        wet_seen, dry_seen = _seen_conditions(seen)
         contradiction = (wet_record and dry_seen) or (dry_record and wet_seen)
         detail = (
             f"At {when:%Y-%m-%d %H:00} UTC at that spot (place from {place_source}, time from "

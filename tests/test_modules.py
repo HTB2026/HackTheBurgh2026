@@ -230,3 +230,14 @@ def test_flashes_are_not_cuts(tmp_path):
     video = fixtures.av_events_video(str(tmp_path / "flash.mp4"))
     findings = run(tmp_path, video, ["timeline"])
     assert not any(f["title"].startswith("Hard cut") for f in findings)
+
+
+def test_weather_reads_negations():
+    from earwitness.modules.weather import _seen_conditions
+
+    assert _seen_conditions(
+        "Cloudy or hazy night; no visible rain, pavement appears dry."
+    ) == (False, True)
+    assert _seen_conditions("It is not raining; clear sky.") == (False, True)
+    assert _seen_conditions("Heavy rain, wet pavement, umbrellas.") == (True, False)
+    assert _seen_conditions("Overcast evening.") == (False, False)
