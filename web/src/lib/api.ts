@@ -1,3 +1,4 @@
+import { authHeaders } from './auth'
 import type { CaseSummary, EnhanceResult, Health } from './types'
 
 async function json<T>(res: Response): Promise<T> {
@@ -17,14 +18,17 @@ async function json<T>(res: Response): Promise<T> {
 export const api = {
   health: () => fetch('/api/health').then((r) => json<Health>(r)),
   cases: () => fetch('/api/cases').then((r) => json<CaseSummary[]>(r)),
-  fromPath: (path: string, options: Record<string, unknown> = {}) =>
+  // Writes need an Auth0 login; authHeaders() starts one when logged out.
+  fromPath: async (path: string, options: Record<string, unknown> = {}) =>
     fetch('/api/cases/from-path', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify({ path, options }),
     }).then((r) => json<CaseSummary>(r)),
-  remove: (id: string) => fetch(`/api/cases/${id}`, { method: 'DELETE' }).then((r) => json<{ deleted: boolean }>(r)),
-  rerun: (id: string) => fetch(`/api/cases/${id}/rerun`, { method: 'POST' }).then((r) => json<CaseSummary>(r)),
+  remove: async (id: string) =>
+    fetch(`/api/cases/${id}`, { method: 'DELETE', headers: await authHeaders() }).then((r) => json<{ deleted: boolean }>(r)),
+  rerun: async (id: string) =>
+    fetch(`/api/cases/${id}/rerun`, { method: 'POST', headers: await authHeaders() }).then((r) => json<CaseSummary>(r)),
   enhance: (id: string, body: { time_s?: number; x: number; y: number; w: number; h: number; frames?: number }) =>
     fetch(`/api/cases/${id}/enhance`, {
       method: 'POST',
@@ -35,15 +39,17 @@ export const api = {
 }
 
 /** Multipart upload with progress (fetch has no upload progress). */
-export function uploadEvidence(
+export async function uploadEvidence(
   file: File,
   approxTime: string | null,
   onProgress: (fraction: number) => void,
 ): Promise<CaseSummary> {
+  const headers = await authHeaders()
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const q = approxTime ? `?approx_time=${encodeURIComponent(approxTime)}` : ''
     xhr.open('POST', `/api/cases${q}`)
+    for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v)
     xhr.upload.onprogress = (e) => {
       if (e.lengthComputable) onProgress(e.loaded / e.total)
     }

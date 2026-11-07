@@ -61,6 +61,22 @@ API: `GET /api/search?since=&until=&severity=&module=&q=` (findings across
 cases), `GET /api/search/dated?start=&end=` (clips the grid dated into a
 window), `GET /api/grid?start=&end=` (stored grid record, per minute).
 
+## Login (Auth0)
+
+Anyone can view cases; uploading, re-running and deleting need an Auth0 login.
+In Auth0 create a **Single Page Application** (Allowed Callback, Logout and
+Web Origins: `http://127.0.0.1:8765`, refresh-token rotation on) and an
+**API** (identifier e.g. `https://earwitness.api`, RS256, Allow Offline Access
+on). If the API's Application Access Policy uses "Per-app authorization" for
+user-delegated access, authorize the SPA in its Application Access tab, or
+login fails with "Client ... is not authorized to access resource server".
+`AUTH0_AUDIENCE` must match the identifier exactly. Then set
+`AUTH0_DOMAIN`, `AUTH0_CLIENT_ID` and `AUTH0_AUDIENCE` in `.env` and restart the
+server; the HUD reads them from `/api/health`, so no rebuild is needed. The
+server checks each access token's signature, issuer, audience and expiry, and
+records the uploader's Auth0 `sub` in the case options. Without these
+settings the write endpoints answer 503.
+
 The UI opens in a plain-language **Simple** view (verdict + "Has it been
 edited? / When? / Where? / Who? / Anything hidden?" cards with confidence);
 **Technical details** shows the full forensic HUD.

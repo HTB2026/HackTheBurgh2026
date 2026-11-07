@@ -145,6 +145,18 @@ select {
   font-size: 12.5px;
   font-weight: 500;
 }
+.auth-btn {
+  font: inherit;
+  font-size: 12.5px;
+  cursor: pointer;
+}
+.auth-btn:hover {
+  background: color-mix(in srgb, var(--accent) 24%, transparent);
+}
+.auth-btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
 .status-pill i.fa-solid {
   color: var(--accent);
 }
