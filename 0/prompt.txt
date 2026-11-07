@@ -1,0 +1,72 @@
+Clicking an image report 
+
+<pasted_content id="e7ac">
+Uncaught Error: Minified React error #185; visit https://react.dev/errors/185 for the full message or use the non-minified dev environment for full errors and additional helpful warnings.
+    xi https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    yi https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    ms https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    ds https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    gl https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Iu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Lu https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    df https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    uf https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    cf https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    nf https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    tf https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Fd https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Pd https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Mf https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    Df https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    df https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    nf https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:8
+    T https://earwitness.ussr.pl/assets/index-DXz4_LT5.js:1
+index-DXz4_LT5.js:8:28254
+Firefox nie może nawiązać połączenia z serwerem wss://earwitness.ussr.pl/ws/cases/20261107-230833-22f0b5. index-DXz4_LT5.js:9:107232
+Połączenie z wss://earwitness.ussr.pl/ws/cases/20261107-230833-22f0b5 zostało przerwane podczas wczytywania strony.
+</pasted_content id="e7ac">
+
+---
+
+ok works. now can you re-run the singapore verification? you killed it while it was working.
+
+---
+
+https://earwitness.ussr.pl/#/case/20261107-230900-f8bdc5
+
+---
+
+/init Make a claude.md
+
+---
+
+Can you now merge all the prs?
+
+---
+
+remember these api keys
+
+---
+
+then push and deploy
