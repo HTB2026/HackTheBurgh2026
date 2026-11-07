@@ -10,6 +10,9 @@ import traceback
 import uuid
 from typing import Any
 
+import psycopg
+
+from earwitness import db
 from earwitness.modules import registry
 from earwitness.modules.base import CaseContext
 from earwitness.modules.base import Reporter
@@ -140,6 +143,11 @@ class CaseStore:
 
         return True
 
+    async def sync_index(self) -> None:
+        """Backfill the database index with every case on disk."""
+        for case in list(self.cases.values()):
+            await db.index_case(case)
+
     def start(self, case: Case, *, only: list[str] | None = None) -> None:
         case.task = asyncio.create_task(run_case(case, only=only))
 
@@ -252,8 +260,21 @@ async def _custody(case: "Case", probe: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+async def _index(case: Case) -> None:
+    # The files are the record of the run; a database hiccup must not sink it.
+    try:
+        await db.index_case(case)
+    except (psycopg.Error, OSError) as error:
+        case.emit(
+            {"type": "log", "module": "index",
+             "message": f"database index not updated: {type(error).__name__}: {error}"}
+        )  # fmt: skip
+
+
 async def run_case(case: Case, *, only: list[str] | None = None) -> None:
     case.status = "running"
+    # Mark the case running in the index without holding up the analysis.
+    started_index = asyncio.create_task(_index(case))
     ctx = CaseContext(case.id, case.evidence_path, case.workdir, case.options)
     case.ctx = ctx
     probe = await ctx.probe()
@@ -375,4 +396,6 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
 
     await asyncio.gather(proxy(), *(one(m) for m in modules))
     case.status = "done"
+    await started_index
+    await _index(case)
     case.emit({"type": "done"})

@@ -6,7 +6,9 @@ Sources, in order of preference:
   straight to the hours we need.
 - Elexon Insights FREQ: 15 s resolution, near real time.
 
-Everything is cached under ~/.cache/earwitness/grid.
+Samples are stored in the Tiger Data ``grid_frequency`` hypertable; a window
+already covered there is served without any HTTP. Only the NESO resource index
+is cached on disk, under ~/.cache/earwitness/grid.
 """
 
 import asyncio
@@ -20,6 +22,7 @@ from datetime import timezone
 import httpx
 import numpy as np
 
+from earwitness import db
 from earwitness.grid import GridSeries
 
 _NESO_PACKAGE = (
@@ -28,6 +31,9 @@ _NESO_PACKAGE = (
 _ELEXON = "https://data.elexon.co.uk/bmrs/api/v1/system/frequency"
 _ROW_BYTES = 27
 _CACHE = os.path.expanduser("~/.cache/earwitness/grid")
+_NESO = "NESO historic frequency (1 s)"
+_ELEXON_SOURCE = "Elexon FREQ (15 s)"
+_EDGE_SLACK_S = 60.0
 _MONTHS = [
     "january", "february", "march", "april", "may", "june", "july",
     "august", "september", "october", "november", "december",
@@ -187,13 +193,12 @@ async def fetch(start: datetime, end: datetime) -> tuple[GridSeries | None, str]
     """Grid frequency covering [start, end]; returns (series, source description)."""
     start = start.astimezone(timezone.utc)
     end = end.astimezone(timezone.utc)
-    cache = _cache_path("window", start.isoformat(), end.isoformat())
+    stored = await db.grid_window(start, end, (_NESO, _ELEXON_SOURCE))
 
-    if os.path.isfile(cache + ".npz"):
-        data = np.load(cache + ".npz")
-        source = str(data["source"])
+    if stored is not None:
+        source, times, values = stored
 
-        return _to_series(list(data["t"]), list(data["v"])), source
+        return _to_series(times, values), source
 
     times: list[float] = []
     values: list[float] = []
@@ -223,14 +228,14 @@ async def fetch(start: datetime, end: datetime) -> tuple[GridSeries | None, str]
                 cursor = part_end
 
             if times:
-                source = "NESO historic frequency (1 s)"
+                source = _NESO
         except httpx.HTTPError, ValueError, KeyError:
             times, values = [], []
 
         if not times:
             try:
                 times, values = await _elexon_window(client, start, end)
-                source = "Elexon FREQ (15 s)"
+                source = _ELEXON_SOURCE
             except httpx.HTTPError, ValueError, KeyError:
                 times, values = [], []
 
@@ -241,15 +246,25 @@ async def fetch(start: datetime, end: datetime) -> tuple[GridSeries | None, str]
     ]
 
     if inside:
-        t_arr, v_arr = zip(*inside)
-        np.savez(
-            cache + ".npz",
-            t=np.array(t_arr),
-            v=np.array(v_arr),
-            source=np.array(source),
+        t_arr, v_arr = (list(column) for column in zip(*inside))
+        # Only the span the source actually delivered counts as covered, so a
+        # window running into the future (or a month not yet published) is
+        # fetched again later instead of being frozen half-empty.
+        # A sample step's worth of slack at either edge still counts as complete.
+        first, last = min(t_arr), max(t_arr)
+        covered_start = (
+            start
+            if first - start.timestamp() <= _EDGE_SLACK_S
+            else datetime.fromtimestamp(first, tz=timezone.utc)
         )
+        covered_end = (
+            end
+            if end.timestamp() - last <= _EDGE_SLACK_S
+            else datetime.fromtimestamp(last, tz=timezone.utc)
+        )
+        await db.store_grid(source, t_arr, v_arr, covered_start, covered_end)
 
-        return _to_series(list(t_arr), list(v_arr)), source
+        return _to_series(t_arr, v_arr), source
 
     return None, source
 
