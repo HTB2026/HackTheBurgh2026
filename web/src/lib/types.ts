@@ -134,10 +134,18 @@ export type CaseEvent =
   | (Base & { type: 'error'; message: string })
   | (Base & { type: 'reset' })
 
+export interface AuthConfig {
+  domain: string
+  client_id: string
+  audience: string
+}
+
 export interface Health {
   ok: boolean
   openai: boolean
   modules: ModuleInfo[]
+  /** Auth0 login settings; null when the server has no login configured. */
+  auth?: AuthConfig | null
 }
 
 export interface EnhanceResult {
