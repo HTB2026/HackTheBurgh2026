@@ -29,7 +29,7 @@ else
 fi
 
 echo "==> Copying code to $TARGET:~/earwitness"
-"${RUN[@]}" rsync -az --delete \
+${RUN[@]+"${RUN[@]}"} rsync -az --delete \
   -e "ssh ${SSH_OPTS[*]}" \
   --exclude .venv --exclude web/node_modules --exclude web/dist --exclude web/dist-stable \
   --exclude cases --exclude __pycache__ --exclude .pytest_cache --exclude .ruff_cache \
@@ -40,7 +40,7 @@ echo "==> Setting up the server (this takes a few minutes the first time)"
 # bash -s reads its script from stdin line by line: the first line reads the
 # next line (the sudo password) into a variable, then the setup script follows.
 { printf 'read -r SUDO_PASS\n%s\n' "$SUDO_LINE"; cat "$ROOT/scripts/remote_setup.sh"; } |
-  "${RUN[@]}" ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s'
+  ${RUN[@]+"${RUN[@]}"} ssh "${SSH_OPTS[@]}" "$TARGET" 'bash -s'
 
 HOST="${TARGET#*@}"
 echo "==> Done: http://$HOST/"
