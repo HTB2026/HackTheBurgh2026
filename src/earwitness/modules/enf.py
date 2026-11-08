@@ -88,7 +88,7 @@ class Enf:
             )
 
         provenance = await ctx.wait_for("provenance") or {}
-        centre = ctx.options.get("approx_time") or provenance.get("start_guess")
+        centre = provenance.get("start_guess")
 
         if isinstance(centre, str):
             centre = datetime.fromisoformat(centre)
@@ -99,7 +99,7 @@ class Enf:
         if centre.tzinfo is None:
             centre = centre.replace(tzinfo=timezone.utc)
 
-        hours = float(ctx.options.get("search_hours", _SEARCH_HOURS))
+        hours = _SEARCH_HOURS
         out.progress(0.6, "fetching GB grid record")
 
         return await grid_fetch.fetch(
@@ -348,13 +348,13 @@ class Enf:
             source = f"supplied grid file {path}"
         elif profile.nominal_hz == 50.0:
             provenance = await ctx.wait_for("provenance") or {}
-            centre = ctx.options.get("approx_time") or provenance.get("start_guess")
+            centre = provenance.get("start_guess")
 
             if isinstance(centre, str):
                 centre = datetime.fromisoformat(centre)
 
             if centre is not None:
-                hours = float(ctx.options.get("search_hours", _SEARCH_HOURS))
+                hours = _SEARCH_HOURS
                 out.progress(0.6, "fetching GB grid record")
                 reference, source = await grid_fetch.fetch(
                     centre - timedelta(hours=hours), centre + timedelta(hours=hours)

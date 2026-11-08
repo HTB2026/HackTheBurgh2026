@@ -106,7 +106,7 @@ export function Landing({ examine }: { examine?: boolean }) {
       setErr(null)
       setUpload({ name: file.name, p: 0 })
       try {
-        const s = await uploadEvidence(file, null, aiChosen, (p) => setUpload({ name: file.name, p }))
+        const s = await uploadEvidence(file, aiChosen, (p) => setUpload({ name: file.name, p }))
         location.hash = `#/case/${s.id}`
       } catch (e) {
         setErr(String((e as Error).message ?? e))

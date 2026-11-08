@@ -56,12 +56,6 @@ export async function mockUpload(file: File, onProgress: (fraction: number) => v
   return summary(events)
 }
 
-export async function mockFromPath(path: string): Promise<CaseSummary> {
-  // Browsers cannot read arbitrary filesystem paths. Offer a bundled example instead.
-  if (!/^(planted|photo|generated|clean)$/.test(path.trim())) throw new Error('In preview, enter planted, photo, generated or clean; or upload a local file above.')
-  return summary(await loadMock(path.trim()))
-}
-
 function readImage(url: string): Promise<HTMLImageElement> {
   return new Promise((resolve, reject) => {
     const image = new Image()

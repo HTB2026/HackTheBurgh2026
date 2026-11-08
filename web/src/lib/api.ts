@@ -1,6 +1,6 @@
 import { authHeaders } from './auth'
 import type { AiProvider, CaseEvent, CaseSummary, EnhanceResult, Health } from './types'
-import { isMock, mockCases, mockEnhance, mockEvents, mockFromPath, mockHealth, mockRemove, mockRerun, mockUpload } from './mockBackend'
+import { isMock, mockCases, mockEnhance, mockEvents, mockHealth, mockRemove, mockRerun, mockUpload } from './mockBackend'
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -21,12 +21,6 @@ export const api = {
   cases: () => isMock() ? mockCases() : fetch('/api/cases').then((r) => json<CaseSummary[]>(r)),
   events: (id: string) => isMock() ? mockEvents(id) : fetch(`/api/cases/${encodeURIComponent(id)}`).then((r) => json<{ events: CaseEvent[] }>(r)),
   // Writes need an Auth0 login; authHeaders() starts one when logged out.
-  fromPath: async (path: string, options: Record<string, unknown> = {}) =>
-    isMock() ? mockFromPath(path) : fetch('/api/cases/from-path', {
-      method: 'POST',
-      headers: { 'content-type': 'application/json', ...(await authHeaders()) },
-      body: JSON.stringify({ path, options }),
-    }).then((r) => json<CaseSummary>(r)),
   remove: async (id: string) =>
     isMock() ? mockRemove(id) : fetch(`/api/cases/${id}`, { method: 'DELETE', headers: await authHeaders() }).then((r) => json<{ deleted: boolean }>(r)),
   rerun: async (id: string, aiProvider?: AiProvider | null) =>
@@ -47,7 +41,6 @@ export const api = {
 /** Multipart upload with progress (fetch has no upload progress). */
 export async function uploadEvidence(
   file: File,
-  approxTime: string | null,
   aiProvider: AiProvider | null,
   onProgress: (fraction: number) => void,
 ): Promise<CaseSummary> {
@@ -56,7 +49,6 @@ export async function uploadEvidence(
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
     const params = new URLSearchParams()
-    if (approxTime) params.set('approx_time', approxTime)
     if (aiProvider) params.set('ai_provider', aiProvider)
     const q = params.size ? `?${params}` : ''
     xhr.open('POST', `/api/cases${q}`)

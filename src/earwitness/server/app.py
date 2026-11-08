@@ -77,11 +77,6 @@ def _ai_provider(name: str) -> str:
     return name
 
 
-class PathCase(BaseModel):
-    path: str
-    options: dict[str, Any] = {}
-
-
 class EnhanceRequest(BaseModel):
     time_s: float = 0.0
     x: float
@@ -128,8 +123,6 @@ async def list_cases() -> list[dict[str, Any]]:
 @app.post("/api/cases")
 async def upload(
     file: UploadFile,
-    approx_time: str | None = None,
-    search_hours: float | None = None,
     ai_provider: str | None = None,
     user: auth.User = Depends(auth.require_user),
 ) -> dict[str, Any]:
@@ -138,48 +131,11 @@ async def upload(
     if ai_provider:
         options["ai_provider"] = _ai_provider(ai_provider)
 
-    if approx_time:
-        options["approx_time"] = approx_time
-
-    if search_hours:
-        options["search_hours"] = search_hours
-
     case = store.create(file.filename or "evidence.mp4", options)
 
     with open(case.evidence_path, "wb") as handle:
         await asyncio.to_thread(shutil.copyfileobj, file.file, handle, 1 << 20)
 
-    store.start(case)
-
-    return case.summary()
-
-
-@app.post("/api/cases/from-path")
-async def from_path(
-    request: PathCase, user: auth.User = Depends(auth.require_user)
-) -> dict[str, Any]:
-    """Open a file already on this machine (no upload; handy for big files)."""
-    path = os.path.expanduser(request.path)
-
-    if not os.path.isfile(path):
-        raise HTTPException(400, "file not found")
-
-    options = {
-        "original_name": os.path.basename(path),
-        **request.options,
-        "uploaded_by": user.sub,
-    }
-
-    if options.get("ai_provider"):
-        options["ai_provider"] = _ai_provider(str(options["ai_provider"]))
-    # A grid record saved next to the evidence is used automatically.
-    sibling = os.path.join(os.path.dirname(path), "grid.csv")
-
-    if "grid_path" not in options and os.path.isfile(sibling):
-        options["grid_path"] = sibling
-
-    case = store.create(path, options)
-    await asyncio.to_thread(shutil.copyfile, path, case.evidence_path)
     store.start(case)
 
     return case.summary()

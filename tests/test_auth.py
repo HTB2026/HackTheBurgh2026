@@ -46,26 +46,28 @@ def token(key=KEY, **overrides) -> str:
     return jwt.encode(claims, key, algorithm="RS256")
 
 
-def from_path(client, bearer: str | None):
+def upload(client, bearer: str | None):
     headers = {"Authorization": f"Bearer {bearer}"} if bearer else {}
 
+    # An unsupported AI provider makes a request that passes the gate fail with
+    # 400 before any case is created.
     return client.post(
-        "/api/cases/from-path",
-        json={"path": "/nonexistent/clip.mp4"},
+        "/api/cases?ai_provider=nonexistent",
+        files={"file": ("clip.mp4", b"not a video")},
         headers=headers,
     )
 
 
 def test_write_needs_login(client):
-    response = from_path(client, None)
+    response = upload(client, None)
 
     assert response.status_code == 401
     assert response.headers["www-authenticate"].startswith("Bearer")
 
 
 def test_valid_token_passes_the_gate(client):
-    # Past the gate the handler runs: the made-up path is then a 400, not a 401.
-    assert from_path(client, token()).status_code == 400
+    # Past the gate the handler runs: the unknown AI provider is then a 400, not a 401.
+    assert upload(client, token()).status_code == 400
 
 
 @pytest.mark.parametrize(
@@ -81,7 +83,7 @@ def test_valid_token_passes_the_gate(client):
 def test_bad_tokens_are_refused(client, bad):
     key = bad.pop("key", KEY)
 
-    assert from_path(client, token(key, **bad)).status_code == 401
+    assert upload(client, token(key, **bad)).status_code == 401
 
 
 def test_delete_and_rerun_are_gated(client):
@@ -102,4 +104,4 @@ def test_reading_stays_open(client):
 def test_unconfigured_server_refuses_writes(client, monkeypatch):
     monkeypatch.delenv("AUTH0_DOMAIN")
 
-    assert from_path(client, token()).status_code == 503
+    assert upload(client, token()).status_code == 503
