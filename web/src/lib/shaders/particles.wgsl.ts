@@ -5,7 +5,7 @@ struct Sim {
   time: f32,
   aspect: f32,        // canvas width / height
   envCount: f32,
-  mouse: vec2f,       // x 0..1, y -1..1 (y up); x < 0 when the mouse is away
+  mouse: vec2f,       // over the canvas: x 0..1, y -1..1 (y up); x = -10 when the mouse is away
   pixel: vec2f,       // size of one device pixel in clip units
 };
 struct P { v: vec4f };  // x (0..1), y (-1..1), vx, vy
@@ -52,14 +52,15 @@ fn simulate(@builtin(global_invocation_id) gid: vec3u) {
   p.w += (hash(seed + 7u) - 0.5) * 0.9 * sim.dt;
   p.w += sin(p.x * 25.0 + sim.time * 1.3 + f32(i % 13u)) * 0.06 * sim.dt;
 
-  // The mouse pushes particles away.
-  if (sim.mouse.x >= 0.0) {
-    let d = vec2f((p.x - sim.mouse.x) * sim.aspect * 0.5, p.y - sim.mouse.y);
+  // The mouse pushes particles away. Distances in screen proportions: x spans 2*aspect
+  // half-heights across the canvas, y is drawn scaled by 0.92 (see vs below).
+  if (sim.mouse.x > -5.0) {
+    let d = vec2f((p.x - sim.mouse.x) * 2.0 * sim.aspect, p.y * 0.92 - sim.mouse.y);
     let r = length(d);
-    if (r < 0.35 && r > 1e-4) {
-      let push = (0.35 - r) * 6.0 * sim.dt;
-      p.y += d.y / r * push;
-      p.x += d.x / r * push / (sim.aspect * 0.5);
+    if (r < 0.6 && r > 1e-4) {
+      let push = (0.6 - r) * 5.0 * sim.dt;
+      p.y += d.y / r * push / 0.92;
+      p.x += d.x / r * push / (2.0 * sim.aspect);
     }
   }
   p.w *= exp(-2.2 * sim.dt);

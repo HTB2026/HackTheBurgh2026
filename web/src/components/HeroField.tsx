@@ -31,7 +31,7 @@ export function HeroField({ peaks }: { peaks: number[] | null }) {
   const reduced = typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches
   const gpu = gpuState === 'loading' || reduced ? null : gpuState
   const { ref, ctx, size } = useGpuCanvas(gpu)
-  const mouse = useRef<[number, number]>([-1, 0])
+  const mouse = useRef<[number, number]>([-10, 0])
   const envBuf = useRef<GPUBuffer | null>(null)
   const envCount = useRef(0)
 
@@ -123,10 +123,13 @@ export function HeroField({ peaks }: { peaks: number[] | null }) {
     const el = ref.current?.parentElement
     if (!el || !gpu) return
     const move = (e: PointerEvent) => {
-      const r = el.getBoundingClientRect()
+      // Relative to the canvas (it covers only part of the intro), not the whole section.
+      const canvas = ref.current
+      if (!canvas) return
+      const r = canvas.getBoundingClientRect()
       mouse.current = [(e.clientX - r.left) / r.width, 1 - ((e.clientY - r.top) / r.height) * 2]
     }
-    const leave = () => (mouse.current = [-1, 0])
+    const leave = () => (mouse.current = [-10, 0])
     el.addEventListener('pointermove', move)
     el.addEventListener('pointerleave', leave)
     return () => {

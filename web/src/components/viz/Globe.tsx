@@ -93,19 +93,30 @@ async function stitch(z: number, x0: number, y0: number, n: number): Promise<Off
 let earthQuick: Promise<OffscreenCanvas | null> | null = null
 let earthSharp: Promise<OffscreenCanvas | null> | null = null
 
-/** Zoom level and size (tiles per side) of the sharp patch loaded around the place in view. */
-const DETAIL_Z = 9
-const DETAIL_N = 8
+/** Tiles per side of the sharp patch (10 x 256 = 2560 px) loaded for the current view. */
+const DETAIL_N = 10
+const FOV = 0.7
 
-/** The DETAIL_N x DETAIL_N block of zoom-DETAIL_Z tiles centred on a point, and its Mercator bounds. */
-function detailBlock(lat: number, lon: number) {
-  const tiles = 2 ** DETAIL_Z
+/**
+ * The block of tiles that covers what the camera sees (with a 30% margin), at the sharpest
+ * zoom where DETAIL_N tiles still span it. null when the 4096 px world image is enough.
+ */
+function detailBlock(c: Cam, aspect: number) {
+  const lat = c.lat / RAD
+  const lon = ((((c.lon / RAD + 180) % 360) + 360) % 360) - 180
+  const cosLat = Math.max(0.05, Math.cos(c.lat))
+  // Ground seen across the frame (radians), then as a span of Web Mercator x/y.
+  const tall = 2 * (c.dist - 1) * Math.tan(FOV / 2)
+  const span = (Math.max(tall, tall * aspect) * 1.3) / (2 * Math.PI * cosLat)
+  const z = Math.min(16, Math.floor(Math.log2(DETAIL_N / span)))
+  if (z <= 4) return null
+  const tiles = 2 ** z
   const mx = (lon + 180) / 360
   const s = Math.sin(Math.max(-85.05, Math.min(85.05, lat)) * RAD)
   const my = 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)
-  const x0 = Math.max(0, Math.min(tiles - DETAIL_N, Math.floor(mx * tiles) - DETAIL_N / 2 + 1))
-  const y0 = Math.max(0, Math.min(tiles - DETAIL_N, Math.floor(my * tiles) - DETAIL_N / 2 + 1))
-  return { x0, y0, key: `${x0}/${y0}`, bounds: [x0 / tiles, y0 / tiles, (x0 + DETAIL_N) / tiles, (y0 + DETAIL_N) / tiles] as [number, number, number, number] }
+  const x0 = Math.max(0, Math.min(tiles - DETAIL_N, Math.round(mx * tiles - DETAIL_N / 2)))
+  const y0 = Math.max(0, Math.min(tiles - DETAIL_N, Math.round(my * tiles - DETAIL_N / 2)))
+  return { z, x0, y0, key: `${z}/${x0}/${y0}`, bounds: [x0 / tiles, y0 / tiles, (x0 + DETAIL_N) / tiles, (y0 + DETAIL_N) / tiles] as [number, number, number, number] }
 }
 
 interface Cam {
@@ -126,7 +137,7 @@ const slerpCam = (a: Cam, b: Cam, t: number): Cam => {
 
 const camFor = (p: MapPoint): Cam => {
   const r = Math.min(Math.PI, (p.accuracy_m ?? 50_000) / EARTH_M)
-  // Close enough to see the sharp patch, but never closer than ~300 km up.
+  // Close enough to read the area, but never closer than ~300 km up on arrival.
   return { lat: p.lat * RAD, lon: p.lon * RAD, dist: 1 + Math.min(2.6, Math.max(0.05, r * 3.2)) }
 }
 
@@ -140,7 +151,7 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
   const [earth, setEarth] = useState<GPUTexture | null>(null)
   const [noImagery, setNoImagery] = useState(false)
   const [detail, setDetail] = useState<{ texture: GPUTexture; bounds: [number, number, number, number]; key: string } | null>(null)
-  const [detailFor, setDetailFor] = useState<MapPoint | null>(null)
+  const wanted = useRef<string | null>(null)
   const cam = useRef<Cam>({ lat: 20 * RAD, lon: 0, dist: 3.4 })
   const flight = useRef<{ from: Cam; to: Cam; start: number; ms: number } | null>(null)
   const drag = useRef<{ x: number; y: number; cam: Cam } | null>(null)
@@ -175,25 +186,42 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
     }
   }, [gpu])
 
-  // A sharp patch (zoom 9, about 500 km across) around the place the camera is flying to.
+  // A sharp patch that covers the current view: whenever the camera has settled (not dragging,
+  // not flying, unchanged for a moment) and the view needs a different patch, load that one.
+  // The old patch stays on screen until the new one is ready.
+  const detailKey = useRef<string | null>(null)
+  detailKey.current = detail?.key ?? null
   useEffect(() => {
-    if (!detailFor) return
-    const block = detailBlock(detailFor.lat, detailFor.lon)
-    if (detail?.key === block.key) return
+    if (!size.width) return
+    let last = ''
     let live = true
-    stitch(DETAIL_Z, block.x0, block.y0, DETAIL_N).then((img) => {
-      if (!live || !img) return
-      const texture = textureWithMips(gpu.device, img)
-      setDetail((old) => {
-        old?.texture.destroy()
-        return { texture, bounds: block.bounds, key: block.key }
+    const tick = () => {
+      if (drag.current || flight.current) return
+      const c = cam.current
+      const sig = `${c.lat.toFixed(5)}/${c.lon.toFixed(5)}/${c.dist.toFixed(5)}`
+      if (sig !== last) return void (last = sig) // still moving: wait for the next tick
+      const block = detailBlock(c, size.width / size.height)
+      if (!block || block.key === detailKey.current || block.key === wanted.current) return
+      wanted.current = block.key
+      stitch(block.z, block.x0, block.y0, DETAIL_N).then((img) => {
+        if (!live || !img || wanted.current !== block.key) return
+        const texture = textureWithMips(gpu.device, img)
+        setDetail((old) => {
+          // Destroy the old patch once the new bind group is in use.
+          if (old) setTimeout(() => old.texture.destroy(), 1000)
+          return { texture, bounds: block.bounds, key: block.key }
+        })
       })
-    })
+    }
+    const id = setInterval(tick, 250)
     return () => {
       live = false
+      clearInterval(id)
     }
-  }, [gpu, detailFor]) // eslint-disable-line react-hooks/exhaustive-deps
-  useEffect(() => () => detail?.texture.destroy(), []) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [gpu, size])
+  const detailRefForCleanup = useRef(detail)
+  detailRefForCleanup.current = detail
+  useEffect(() => () => detailRefForCleanup.current?.texture.destroy(), [])
 
   // Point and arc buffers, rebuilt when the points or imagery change.
   useEffect(() => {
@@ -252,7 +280,6 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
     const p = pts[focus.index >= 0 ? focus.index : globeTarget(pts)]
     if (!p) return
     flight.current = { from: { ...cam.current }, to: camFor(p), start: performance.now(), ms: focus.nonce === 0 ? 2600 : 1600 }
-    if ((p.accuracy_m ?? 0) < 2_000_000) setDetailFor(p)
   }, [focus.index, focus.nonce, pts])
 
   // Render loop (the pins pulse and arcs flow); paused when the tab is hidden.
@@ -273,7 +300,7 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
       const eye: Vec3 = [Math.cos(c.lat) * Math.sin(c.lon) * c.dist, Math.sin(c.lat) * c.dist, Math.cos(c.lat) * Math.cos(c.lon) * c.dist]
       const up: Vec3 = Math.abs(c.lat) > 1.5 ? [0, 0, -1] : [0, 1, 0]
       const near = Math.max(0.001, (c.dist - 1) * 0.3)
-      const vp = multiply(perspective(0.7, size.width / size.height, near, c.dist + 2), lookAt(eye, [0, 0, 0], up))
+      const vp = multiply(perspective(FOV, size.width / size.height, near, c.dist + 2), lookAt(eye, [0, 0, 0], up))
       const u = new Float32Array(32)
       u.set(vp, 0)
       u.set([...eye, c.dist], 16)
@@ -315,8 +342,8 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
       flight.current = null
       const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1)
       const c = cam.current
-      // Down to ~130 km up (the sharp patch holds up to about there).
-      cam.current = { ...c, dist: 1 + Math.min(5, Math.max(0.02, (c.dist - 1) * Math.exp(px * 0.002))) }
+      // Down to ~30 km up: the sharp patch follows the view and its zoom.
+      cam.current = { ...c, dist: 1 + Math.min(5, Math.max(0.005, (c.dist - 1) * Math.exp(px * 0.002))) }
     }
     el.addEventListener('wheel', on, { passive: false })
     return () => el.removeEventListener('wheel', on)
@@ -336,9 +363,11 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
         onPointerMove={(e) => {
           const g = drag.current
           if (!g) return
-          // Turn by an angle that matches the zoom, so the ground follows the pointer.
-          const k = (g.cam.dist - 1) * 0.0026 + 0.0004
-          cam.current = { ...g.cam, lon: g.cam.lon - (e.clientX - g.x) * k, lat: Math.max(-1.45, Math.min(1.45, g.cam.lat + (e.clientY - g.y) * k)) }
+          // Turn by exactly the ground under one pixel, so the land stays under the pointer.
+          const h = (e.currentTarget as HTMLCanvasElement).clientHeight || 420
+          const k = (2 * (g.cam.dist - 1) * Math.tan(FOV / 2)) / h / Math.max(0.2, Math.cos(g.cam.lat))
+          const kLat = k * Math.max(0.2, Math.cos(g.cam.lat))
+          cam.current = { ...g.cam, lon: g.cam.lon - (e.clientX - g.x) * k, lat: Math.max(-1.45, Math.min(1.45, g.cam.lat + (e.clientY - g.y) * kLat)) }
         }}
         onPointerUp={() => (drag.current = null)}
         onDoubleClick={() => target && (flight.current = { from: { ...cam.current }, to: camFor(target), start: performance.now(), ms: 1400 })}
