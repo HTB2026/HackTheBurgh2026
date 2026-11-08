@@ -1,3 +1,4 @@
+import type { CSSProperties } from 'react'
 import type { Effort } from '../lib/types'
 import { Icon } from './ui/ui'
 
@@ -16,31 +17,39 @@ export const EFFORT_HINT: Record<Effort, string> = {
 
 export const effortName = (e: Effort) => `${EFFORT_LABEL[e]} (${EFFORT_TIME[e]})`
 
-/** Quick / Standard / Deep as tabs, for the upload area. */
-export function EffortTabs({ value, onChange, disabled }: { value: Effort; onChange: (e: Effort) => void; disabled?: boolean }) {
+/**
+ * Quick / Standard / Deep as a slider, for the upload area. A native range
+ * input underneath (keyboard and screen readers work); the labels are buttons.
+ */
+export function EffortSlider({ value, onChange, disabled }: { value: Effort; onChange: (e: Effort) => void; disabled?: boolean }) {
+  const at = EFFORTS.indexOf(value)
   return (
-    <div className="ai-choice" role="radiogroup" aria-label="Effort">
+    <div className={`effort lvl-${value}`}>
       <span className="ai-choice-label">
         <Icon name="gauge-high" /> Effort
       </span>
-      <div className="tabs ai-tabs">
-        {EFFORTS.map((e) => (
-          <button
-            key={e}
-            type="button"
-            role="radio"
-            aria-checked={value === e}
-            className={value === e ? 'active' : ''}
-            disabled={disabled}
-            data-tip={EFFORT_HINT[e]}
-            onClick={() => onChange(e)}
-          >
-            {EFFORT_LABEL[e]}
-            <span className="exp-tag">{EFFORT_TIME[e]}</span>
-          </button>
-        ))}
+      <div className="effort-slider" style={{ '--pos': at / (EFFORTS.length - 1) } as CSSProperties}>
+        <input
+          type="range"
+          min={0}
+          max={EFFORTS.length - 1}
+          step={1}
+          value={at}
+          disabled={disabled}
+          aria-label="Effort"
+          aria-valuetext={`${EFFORT_LABEL[value]}, ${EFFORT_TIME[value]}`}
+          onChange={(e) => onChange(EFFORTS[Number(e.target.value)])}
+        />
+        <div className="effort-stops">
+          {EFFORTS.map((e) => (
+            <button key={e} type="button" className={e === value ? 'on' : ''} disabled={disabled} onClick={() => onChange(e)} tabIndex={-1}>
+              <b>{EFFORT_LABEL[e]}</b>
+              <small>{EFFORT_TIME[e]}</small>
+            </button>
+          ))}
+        </div>
       </div>
-      <small className="faint">{EFFORT_HINT[value]}</small>
+      <small className="faint effort-hint">{EFFORT_HINT[value]}</small>
     </div>
   )
 }

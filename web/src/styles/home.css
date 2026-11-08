@@ -301,3 +301,112 @@
   cursor: pointer;
 }
 .feed-clear:hover { color: var(--text); }
+
+/* Effort slider (Quick / Standard / Deep) */
+.effort {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+  margin-bottom: 14px;
+}
+.effort-slider {
+  --pos: 0.5;
+  --thumb: 18px;
+  --tone: var(--blue-2);
+  position: relative;
+  width: 300px;
+  padding-top: 2px;
+}
+.effort.lvl-medium .effort-slider { --tone: #9b59d0; }
+.effort.lvl-high .effort-slider { --tone: var(--red); }
+.effort-slider input[type='range'] {
+  -webkit-appearance: none;
+  appearance: none;
+  display: block;
+  width: 100%;
+  height: var(--thumb);
+  margin: 0;
+  background: transparent;
+  cursor: pointer;
+}
+.effort-slider input[type='range']:disabled { cursor: default; opacity: 0.6; }
+/* The track: filled up to the thumb, warming from blue to red as effort rises. */
+.effort-slider input[type='range']::-webkit-slider-runnable-track {
+  height: 6px;
+  border-radius: 999px;
+  background:
+    radial-gradient(circle, var(--muted) 2px, transparent 2.5px) calc(var(--thumb) / 2 - 3px) 50% / 6px 6px no-repeat,
+    radial-gradient(circle, var(--muted) 2px, transparent 2.5px) 50% 50% / 6px 6px no-repeat,
+    radial-gradient(circle, var(--muted) 2px, transparent 2.5px) calc(100% - var(--thumb) / 2 + 3px) 50% / 6px 6px no-repeat,
+    linear-gradient(90deg, var(--blue-2), var(--tone)) 0 0 / calc(var(--thumb) / 2 + (100% - var(--thumb)) * var(--pos)) 100% no-repeat,
+    var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+  transition: background-size 0.25s ease;
+}
+.effort-slider input[type='range']::-moz-range-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  box-shadow: inset 0 0 0 1px var(--line);
+}
+.effort-slider input[type='range']::-moz-range-progress {
+  height: 6px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, var(--blue-2), var(--tone));
+}
+.effort-slider input[type='range']::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  width: var(--thumb);
+  height: var(--thumb);
+  margin-top: calc((6px - var(--thumb)) / 2);
+  border-radius: 50%;
+  background: var(--text);
+  border: 3px solid var(--tone);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--tone) 22%, transparent);
+  transition: border-color 0.25s, box-shadow 0.25s, transform 0.15s;
+}
+.effort-slider input[type='range']::-moz-range-thumb {
+  width: var(--thumb);
+  height: var(--thumb);
+  box-sizing: border-box;
+  border-radius: 50%;
+  background: var(--text);
+  border: 3px solid var(--tone);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--tone) 22%, transparent);
+}
+.effort-slider input[type='range']:active::-webkit-slider-thumb { transform: scale(1.12); }
+.effort-slider input[type='range']:focus-visible::-webkit-slider-thumb { outline: 2px solid var(--text); outline-offset: 2px; }
+/* Deep: the thumb breathes, as if it is working harder. */
+.effort.lvl-high input[type='range']::-webkit-slider-thumb { animation: effort-glow 1.8s ease-in-out infinite; }
+.effort.lvl-high input[type='range']::-moz-range-thumb { animation: effort-glow 1.8s ease-in-out infinite; }
+@keyframes effort-glow {
+  50% { box-shadow: 0 0 0 7px color-mix(in srgb, var(--red) 28%, transparent), 0 0 18px color-mix(in srgb, var(--red) 55%, transparent); }
+}
+.effort-stops {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+}
+.effort-stops button {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  width: 33%;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  cursor: pointer;
+  font: inherit;
+  transition: color 0.2s;
+}
+.effort-stops button:first-child { align-items: flex-start; }
+.effort-stops button:last-child { align-items: flex-end; }
+.effort-stops button b { font-size: 13.5px; font-weight: 500; }
+.effort-stops button small { font-size: 11.5px; opacity: 0.75; }
+.effort-stops button.on { color: var(--text); }
+.effort-stops button.on b { font-weight: 600; }
+.effort-stops button:hover:not(:disabled) { color: var(--text); }
+.effort-hint { flex: 1 1 260px; max-width: 560px; }

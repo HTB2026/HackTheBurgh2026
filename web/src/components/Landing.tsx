@@ -4,7 +4,7 @@ import { useHealth } from '../lib/health'
 import { canChange, ownerName, useAuth } from '../lib/auth'
 import { FeedFilter, isFiltered, matches, useFeedFilter } from './FeedFilter'
 import { AI_EXPERIMENTAL, AI_HINT, AI_LABEL, aiChoices } from './AiPicker'
-import { EFFORT_HINT, EFFORT_LABEL, EffortTabs, storedEffort } from './EffortPicker'
+import { EFFORT_HINT, EFFORT_LABEL, EffortSlider, storedEffort } from './EffortPicker'
 import type { AiProvider, Effort } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
 import { ago, dateShort, mmss } from '../lib/format'
@@ -271,7 +271,7 @@ export function Landing({ examine }: { examine?: boolean }) {
               <small className="faint">Runs speech, sounds, the visual analyst, geolocation and the written summary.</small>
             </div>
           )}
-          <EffortTabs value={effort} onChange={pickEffort} disabled={!!upload} />
+          <EffortSlider value={effort} onChange={pickEffort} disabled={!!upload} />
           <div
             ref={dropRef}
             className={`dropzone ${upload ? 'busy' : ''}`}
