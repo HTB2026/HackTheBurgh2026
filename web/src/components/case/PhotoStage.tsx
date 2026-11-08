@@ -542,15 +542,83 @@ export function PhotoStage({
   )
 }
 
-/** The photo counterpart of "key moments": every finding that points at a region. */
-export function RegionList({ findings, onOpenFinding }: { findings: Finding[]; onOpenFinding: (id: string) => void }) {
+interface FaceItem {
+  index: number
+  box: Box
+  width_px?: number
+  sharpness?: number
+  recognisable?: boolean
+  eyes_artifact?: string
+  flags?: string[]
+  checks?: { grain?: number | null; blocks?: number }
+}
+
+/** One card per detected face: crop, size, sharpness, eye crop, and what the per-face checks said. */
+function FaceGallery({ faces, artifacts, findings, onOpenFinding }: { faces: FaceItem[]; artifacts: Record<string, Artifact>; findings: Finding[]; onOpenFinding: (id: string) => void }) {
   const rf = useRegionFocus()
-  const items = useMemo(() => rankFindings(findings).map((f) => ({ f, box: boxOf(f) })).filter((x) => x.box) as { f: Finding; box: Box }[], [findings])
+  const checks = findings.filter((f) => f.module === 'faces' && f.tags.includes('face-check'))
+  return (
+    <ul className="face-gallery">
+      {faces.map((p) => {
+        const crop = artifacts[`faces:face${p.index}`]?.url
+        const eyes = p.eyes_artifact ? artifacts[p.eyes_artifact]?.url : null
+        const flagged = checks.filter((f) => f.severity !== 'info' && f.data?.face === p.index)
+        const worst = flagged.find((f) => f.severity === 'warning') ?? flagged[0]
+        return (
+          <li key={p.index} className={`face-card ${worst ? `sev-${worst.severity}` : ''}`}>
+            <button className="face-card-main" onClick={() => rf.focus(p.box, `Face ${p.index}`)} data-tip="Zoom the picture to this face">
+              <div className="face-crop">{crop ? <img src={crop} alt={`Face ${p.index}`} loading="lazy" /> : <i className="fa-solid fa-user" aria-hidden />}</div>
+              <div className="face-facts">
+                <b>Face {p.index}</b>
+                <span className={p.recognisable ? 'face-rec yes' : 'face-rec'}>{p.recognisable ? 'Recognisable' : 'Too small or blurred to recognise'}</span>
+                <span className="mono faint">
+                  {p.width_px != null ? `${Math.round(p.width_px)} px wide` : ''}
+                  {p.sharpness != null ? ` · sharpness ${Math.round(p.sharpness)}` : ''}
+                </span>
+                {worst ? null : p.checks?.grain != null || p.checks?.blocks != null ? (
+                  <span className="face-ok"><i className="fa-solid fa-check" aria-hidden /> Grain and save quality match the picture</span>
+                ) : (
+                  <span className="faint">Too small to test for pasting</span>
+                )}
+              </div>
+            </button>
+            {flagged.map((f) => (
+              <button key={f.id} className={`face-flag sev-${f.severity}`} onClick={() => onOpenFinding(f.id)} data-tip={f.detail.slice(0, 200)}>
+                <SevChip sev={f.severity} solid={false} /> {f.title.replace(`Face ${p.index} `, '')}
+              </button>
+            ))}
+            {eyes && (
+              <a className="face-eyes" href={eyes} target="_blank" rel="noreferrer" data-tip="Both eyes enlarged: reflections show what was in front of the person">
+                <img src={eyes} alt={`Eyes of face ${p.index}`} loading="lazy" />
+              </a>
+            )}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+/** The photo counterpart of "key moments": every finding that points at a region, and a card per face. */
+export function RegionList({ findings, artifacts = {}, onOpenFinding }: { findings: Finding[]; artifacts?: Record<string, Artifact>; onOpenFinding: (id: string) => void }) {
+  const rf = useRegionFocus()
+  const summary = findings.find((f) => f.module === 'faces' && Array.isArray(f.data?.faces) && (f.data.faces as unknown[]).length > 0)
+  const faces = useMemo(
+    () =>
+      ((summary?.data?.faces as (Omit<FaceItem, 'box'> & { box?: unknown })[] | undefined) ?? [])
+        .map((p) => ({ ...p, box: boxOf({ data: { box: p.box } }) }))
+        .filter((p): p is FaceItem => p.box != null),
+    [summary],
+  )
+  const items = useMemo(
+    () => rankFindings(findings.filter((f) => f !== summary)).map((f) => ({ f, box: boxOf(f) })).filter((x) => x.box) as { f: Finding; box: Box }[],
+    [findings, summary],
+  )
   return (
     <div className="moments regions">
       <div className="moments-head">
         <span>Flagged regions</span>
-        <span className="muted">{items.length ? 'Click a region to zoom the picture there' : 'No finding points at a particular part of the picture'}</span>
+        <span className="muted">{items.length || faces.length ? 'Click a region to zoom the picture there' : 'No finding points at a particular part of the picture'}</span>
       </div>
       {items.length > 0 && (
         <ul className="region-list">
@@ -572,6 +640,17 @@ export function RegionList({ findings, onOpenFinding }: { findings: Finding[]; o
             </li>
           ))}
         </ul>
+      )}
+      {faces.length > 0 && summary && (
+        <>
+          <div className="moments-head face-head">
+            <span>
+              Faces ({faces.length}) <button className="link-btn mono faint" onClick={() => onOpenFinding(summary.id)}>{summary.id}</button>
+            </span>
+            <span className="muted">Nobody is identified; only whether a stranger could recognise them</span>
+          </div>
+          <FaceGallery faces={faces} artifacts={artifacts} findings={findings} onOpenFinding={onOpenFinding} />
+        </>
       )}
     </div>
   )

@@ -332,7 +332,10 @@ def _plain_answers(
             confidence = "weak"
 
         # A guess spanning a continent or more is not a location.
-        if guess.data.get("location_available") is False or float(guess.data.get("radius_km") or 0) >= 2500:
+        if (
+            guess.data.get("location_available") is False
+            or float(guess.data.get("radius_km") or 0) >= 2500
+        ):
             answer = "Unknown. Nothing in the picture narrows it down."
             confidence = "unknown"
 
@@ -381,17 +384,26 @@ def _plain_answers(
 
     # ---- people -----------------------------------------------------------------
     pulses = [f for f in findings if f.module == "pulse" and "bpm" in f.title]
+    on_screen = [f for f in findings if f.module == "pulse" and "appearance" in f.tags]
+    least = int(on_screen[0].data.get("at_least") or 0) if on_screen else 0
+    seen = f"At least {least} different people on screen. " if least > 1 else ""
 
     if pulses:
         best = max(pulses, key=lambda f: f.data.get("snr_db", -99))
         reliable = best.data.get("snr_db", -99) > 0
         answers.append(_answer(
             "people", "Who is in it?",
-            (f"At least {len(pulses)} face{'' if len(pulses) == 1 else 's'} visible. "
+            (seen or f"At least {len(pulses)} face{'' if len(pulses) == 1 else 's'} visible. "
              if any("face" in f.title for f in pulses) else "Skin visible, but no face. ")
             + (f"Heart rate about {best.data['bpm']:.0f} bpm, read from tiny skin colour changes."
                if reliable else "Heart rate could not be read (movement or compression)."),
-            "moderate" if reliable else "weak", pulses[:3], best.time_s,
+            "moderate" if reliable else "weak", (on_screen + pulses)[:3], best.time_s,
+        ))  # fmt: skip
+    elif on_screen:
+        answers.append(_answer(
+            "people", "Who is in it?",
+            seen or on_screen[0].title + ". ",
+            "moderate", on_screen, on_screen[0].time_s,
         ))  # fmt: skip
 
     # ---- hidden -----------------------------------------------------------------
@@ -585,7 +597,8 @@ def _photo_answers(
         kinds = []
 
         for f in splices:
-            label = ("part of the picture was copied" if "clone" in f.tags
+            label = ("a face looks pasted in from another photo" if "face-check" in f.tags
+                     else "part of the picture was copied" if "clone" in f.tags
                      else "the camera's preview shows a different picture" if "thumbnail" in f.tags
                      else "an area was pasted in" if "jpeg" in f.tags or "ela" in f.tags
                      else "an area has different grain" if "noise" in f.tags
