@@ -18,6 +18,7 @@ import type { AiProvider, Health } from '../../lib/types'
 import { Player } from './Player'
 import { PhotoStage, RegionList } from './PhotoStage'
 import { FrameScan } from './FrameScan'
+import { BrowserTranscript } from './BrowserTranscript'
 import { FindingsBoard } from './Findings'
 import { geoFinding, LocationHero } from './GeoBoard'
 import { hasLocation } from '../../lib/geo'
@@ -158,6 +159,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
                     </div>
                     {still ? <RegionList findings={state.findings} onOpenFinding={openFinding} /> : <KeyMoments findings={state.findings} duration={info.duration_s} />}
                     {!still && info.video && <FrameScan thumbUrl={info.thumb_url} />}
+                    {!still && info.has_audio && <BrowserTranscript />}
                   </div>
                 </section>
 

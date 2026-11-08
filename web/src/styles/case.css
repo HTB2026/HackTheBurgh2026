@@ -2226,3 +2226,26 @@ td.lb-title > * {
   margin-top: 4px;
   font-size: 12px;
 }
+
+/* Transcript on the viewer's device (Whisper, WebGPU) */
+.browser-ai .exp-tag {
+  margin-left: 0;
+  padding: 0 4px;
+  border: 1px solid #d9a21b;
+  border-radius: 3px;
+  color: #f0b72f;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.browser-ai-chunks {
+  margin: 8px 0 0;
+  padding-left: 0;
+  list-style: none;
+  max-height: 260px;
+  overflow: auto;
+}
+.browser-ai-chunks li {
+  padding: 2px 0;
+}
