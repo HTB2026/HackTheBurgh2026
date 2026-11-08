@@ -9,7 +9,7 @@ exposes playback, timed captions, filmstrip, waveform and chart seeking.
 `planted.events.jsonl` supplies recorded synthetic-video measurements.
 `src/lib/mockShowcase.ts` adds explicitly synthetic examples of the other
 findings and artifact kinds. `src/lib/mockBackend.ts` supplies browser-only
-health, case, upload, delete, rerun, crop/filter and printable-report behavior.
+health, case, upload, delete, rerun, and crop/filter behavior.
 Uploads are not analysed and are discarded when the page is refreshed.
 `&extras` loads the completed state; `&replay` animates the initial load.
 

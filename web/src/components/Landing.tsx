@@ -62,9 +62,6 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
           >
             <Icon name="trash-can" />
           </button>
-          <a className="btn ghost sm" href={api.reportUrl(c.id)} target="_blank" rel="noreferrer" data-tip="Printable report" aria-label="Report">
-            <Icon name="file-lines" />
-          </a>
         </div>
       </div>
     </article>

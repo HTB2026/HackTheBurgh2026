@@ -359,9 +359,6 @@ function CaseHead({
         <div className="head-actions">
           <Seal facts={facts} />
           <div className="head-icons">
-            <a className="icon-btn" href={api.reportUrl(caseId)} target="_blank" rel="noreferrer" data-tip="Printable report" aria-label="Report">
-              <Icon name="file-lines" />
-            </a>
             {still && info?.original_url && (
               <a className="icon-btn" href={info.original_url} target="_blank" rel="noreferrer" data-tip="Open the original file, untouched" aria-label="Original file">
                 <Icon name="download" />

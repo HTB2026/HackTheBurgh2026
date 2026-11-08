@@ -17,7 +17,6 @@ built SPA (`web/dist`) is served by the same server at `/`. In dev, Vite proxies
 | POST | `/api/cases/{id}/rerun` | optional query `ai_provider` (switches the case's provider and saves it) | `CaseSummary` |
 | GET | `/api/cases/{id}/files/{path}` | | artifact files (PNG/JPG/MP4); URLs arrive ready-made in events |
 | POST | `/api/cases/{id}/enhance` | JSON `{time_s, x, y, w, h, frames?}`; x,y,w,h are 0..1 fractions of the video frame | `{single_url, enhanced_url, frames_used, scale, source_px:[w,h], time_s}` |
-| GET | `/api/cases/{id}/report` | | printable HTML report (open in new tab) |
 
 `CaseSummary = {id, filename, created (unix s), status: queued|running|done|interrupted, findings, warnings, case: CaseInfo|null}`
 

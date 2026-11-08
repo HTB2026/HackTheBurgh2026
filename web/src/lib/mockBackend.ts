@@ -5,14 +5,11 @@ import type { CaseEvent, CaseInfo, CaseSummary, EnhanceResult, Health } from './
 
 const removed = new Set<string>()
 const uploads = new Map<string, CaseEvent[]>()
-const reports = new Map<string, string>()
-const snapshots = new Map<string, CaseEvent[]>()
 export const isMock = () => import.meta.env.DEV && !!mockName()
 export const mockDelay = (ms: number) => new Promise<void>((resolve) => window.setTimeout(resolve, ms))
 
 export async function mockEvents(id: string): Promise<{ events: CaseEvent[] }> {
   const events = uploads.get(id) ?? await loadMock(id)
-  snapshots.set(id, events)
   return { events: structuredClone(events) }
 }
 
@@ -56,7 +53,6 @@ export async function mockUpload(file: File, onProgress: (fraction: number) => v
     video.removeAttribute('src'); video.load()
   }
   uploads.set(first.case.id, events)
-  snapshots.set(first.case.id, events)
   return summary(events)
 }
 
@@ -116,20 +112,6 @@ export async function mockEnhance(id: string, box: { time_s?: number; x: number;
       { name: 'Highlights', url: render('brightness(0.6) contrast(1.5)'), caption: 'Local preview: darker highlights.' },
     ] }
   } finally { if (source instanceof HTMLVideoElement) { source.removeAttribute('src'); source.load() } }
-}
-
-const escape = (s: unknown) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]!)
-export function mockReportUrl(id: string): string {
-  const cached = reports.get(id)
-  if (cached) return cached
-  const events = snapshots.get(id)
-  if (!events) return '#'
-  const c = summary(events)
-  const findings = events.flatMap((e) => e.type === 'finding' ? [e.finding] : [])
-  const html = `<!doctype html><html><head><meta charset="utf-8"><title>Preview report · ${escape(c.filename)}</title><style>body{font:16px/1.6 system-ui;max-width:900px;margin:48px auto;padding:24px;color:#222}h1{border-bottom:3px solid #db2828}article{break-inside:avoid;border-top:1px solid #ddd;padding:12px 0}small{color:#555}button{padding:10px 20px}@media print{button{display:none}}</style></head><body><h1>EARWITNESS · Case report</h1><p><b>SYNTHETIC UI PREVIEW — no forensic analysis has been performed.</b></p><h2>${escape(c.filename)}</h2><p>${escape(c.verdict)} · ${findings.length} findings</p><p>${escape(c.summary_plain)}</p><button onclick="window.print()">Print / save PDF</button>${findings.map((f) => `<article><small>${escape(f.id)} · ${escape(f.module)} · ${escape(f.severity)}</small><h3>${escape(f.title)}</h3><p>${escape(f.detail)}</p></article>`).join('')}</body></html>`
-  const url = URL.createObjectURL(new Blob([html], { type: 'text/html' }))
-  reports.set(id, url)
-  return url
 }
 
 export function previewCaseId() { return `mock-${mockCaseName(mockName() ?? 'planted')}` }

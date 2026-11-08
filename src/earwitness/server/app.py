@@ -16,7 +16,6 @@ from fastapi import UploadFile
 from fastapi import WebSocket
 from fastapi import WebSocketDisconnect
 from fastapi.responses import FileResponse
-from fastapi.responses import HTMLResponse
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -26,7 +25,6 @@ from earwitness import db
 from earwitness.modules import registry
 from earwitness.server import auth
 from earwitness.server import enhance
-from earwitness.server import report_html
 from earwitness.server.jobs import CaseStore
 
 _ROOT = os.path.dirname(
@@ -309,11 +307,6 @@ async def enhance_region(case_id: str, request: EnhanceRequest) -> JSONResponse:
         raise HTTPException(422, "could not enhance this region")
 
     return JSONResponse(result)
-
-
-@app.get("/api/cases/{case_id}/report", response_class=HTMLResponse)
-async def report(case_id: str) -> HTMLResponse:
-    return HTMLResponse(report_html.render(_case(case_id)))
 
 
 @app.websocket("/ws/cases/{case_id}")

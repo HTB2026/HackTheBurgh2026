@@ -1,6 +1,6 @@
 import { authHeaders } from './auth'
 import type { AiProvider, CaseEvent, CaseSummary, EnhanceResult, Health } from './types'
-import { isMock, mockCases, mockEnhance, mockEvents, mockFromPath, mockHealth, mockRemove, mockReportUrl, mockRerun, mockUpload } from './mockBackend'
+import { isMock, mockCases, mockEnhance, mockEvents, mockFromPath, mockHealth, mockRemove, mockRerun, mockUpload } from './mockBackend'
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -42,7 +42,6 @@ export const api = {
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     }).then((r) => json<EnhanceResult>(r)),
-  reportUrl: (id: string) => isMock() ? mockReportUrl(id) : `/api/cases/${id}/report`,
 }
 
 /** Multipart upload with progress (fetch has no upload progress). */
