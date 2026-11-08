@@ -45,7 +45,9 @@ Optional extras, configured in `.env` (gitignored):
 ```sh
 OPENAI_API_KEY=sk-...          # AI checks: transcript, sounds, visual analyst, brief, geolocation
 GEMINI_API_KEY=...             # the same AI checks on Gemini (set one key, or both)
-EARWITNESS_AI_PROVIDER=gemini  # optional: provider for cases that don't pick one
+EARWITNESS_OLLAMA_URL=http://10.8.96.3:11434  # self-hosted Gemma 4 via Ollama
+EARWITNESS_OLLAMA_MODEL=gemma4 # optional: the Ollama model tag
+EARWITNESS_AI_PROVIDER=gemini  # optional: provider for cases that don't pick one (openai|gemini|ollama)
 EARWITNESS_GEOSLEUTH=~/.cache/earwitness/vendor/geo-sleuth/skills/geo-sleuth
 ```
 
@@ -57,10 +59,13 @@ error in km is reported. The key is read from the environment only and never
 reaches the browser. Frames and audio are sent to the AI provider only when its
 key is set.
 
-With both keys set, each case picks its AI provider: "AI model" under **More
+With two or more providers set up, each case picks its AI provider: "AI model" under **More
 options** when uploading, or the picker next to **Rerun** on a case (the API
-takes `ai_provider=openai|gemini` on upload and rerun). Answers are cached per
-case and provider (`openai-cache/`, `gemini-cache/`), so switching back is free.
+takes `ai_provider=openai|gemini|ollama` on upload and rerun). Answers are cached per
+case and provider (`openai-cache/`, `gemini-cache/`, `ollama-cache/`), so switching back is free.
+The Ollama provider ("Gemma" in the UI) runs every AI check on one self-hosted model,
+so the transcript has a single reading instead of two cross-checked ones. Pull the
+model on the Ollama host first (`ollama pull gemma4`).
 
 ## Database (Tiger Data)
 

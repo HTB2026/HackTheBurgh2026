@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, uploadEvidence } from '../lib/api'
-import { AI_LABEL, aiChoices } from './AiPicker'
+import { AI_HINT, AI_LABEL, aiChoices } from './AiPicker'
 import type { AiProvider } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
 import { ago, dateShort, mmss } from '../lib/format'
@@ -320,6 +320,7 @@ export function Landing({ examine }: { examine?: boolean }) {
                     aria-checked={aiChosen === p}
                     className={aiChosen === p ? 'active' : ''}
                     disabled={!!upload}
+                    data-tip={AI_HINT[p]}
                     onClick={() => pickAi(p)}
                   >
                     {AI_LABEL[p] ?? p}

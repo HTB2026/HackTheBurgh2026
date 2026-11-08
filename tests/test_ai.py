@@ -13,13 +13,21 @@ from fastapi.testclient import TestClient  # noqa: E402
 
 from earwitness import ai  # noqa: E402
 from earwitness.ai import gemini  # noqa: E402
+from earwitness.ai import ollama  # noqa: E402
 from earwitness.modules import brief  # noqa: E402
 from earwitness.modules import geo  # noqa: E402
 from earwitness.modules import vision  # noqa: E402
 from earwitness.server import app as server  # noqa: E402
 from earwitness.server import auth  # noqa: E402
 
-KEYS = ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "EARWITNESS_AI_PROVIDER")
+KEYS = (
+    "OPENAI_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "EARWITNESS_OLLAMA_URL",
+    "EARWITNESS_OLLAMA_MODEL",
+    "EARWITNESS_AI_PROVIDER",
+)
 
 
 @pytest.fixture
@@ -223,3 +231,161 @@ def test_working_model_still_falls_back(monkeypatch):
 
     assert gemini._models()[0] == gemini._MODELS[1]
     assert sorted(gemini._models()) == sorted(gemini._MODELS)
+
+
+def _fake_ollama(monkeypatch, reply: dict, status: int = 200) -> list[dict]:
+    """Route the Ollama provider's HTTP calls to a stand-in server; returns the requests."""
+    import httpx
+
+    seen: list[dict] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        seen.append({"url": str(request.url), "body": json.loads(request.content)})
+
+        return httpx.Response(status, json=reply)
+
+    real = httpx.AsyncClient
+    monkeypatch.setattr(
+        ollama.httpx,
+        "AsyncClient",
+        lambda **kw: real(transport=httpx.MockTransport(handle), **kw),
+    )
+
+    return seen
+
+
+def test_ollama_is_a_provider(env):
+    env.setenv("EARWITNESS_OLLAMA_URL", "http://10.8.96.3:11434/")
+
+    assert ai.available() == ["ollama"]
+    assert ai.for_case({}) is ollama
+    assert ollama.model() == "gemma4"
+
+
+def test_ollama_falls_back_when_format_is_unsupported(env, tmp_path):
+    """Ollama's MLX runner answers 501 to ``format``: the schema moves into the prompt."""
+    import asyncio
+
+    import httpx
+
+    env.setenv("EARWITNESS_OLLAMA_URL", "http://vps:11434")
+    env.setattr(ollama, "_constrained", None)
+    seen: list[dict] = []
+
+    def handle(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content)
+        seen.append(body)
+
+        if "format" in body:
+            return httpx.Response(501, json={"error": "structured output is unavailable"})
+
+        return httpx.Response(
+            200, json={"message": {"content": 'Sure:\n```json\n{"summary": "ok"}\n```'}}
+        )
+
+    real = httpx.AsyncClient
+    env.setattr(
+        ollama.httpx, "AsyncClient", lambda **kw: real(transport=httpx.MockTransport(handle), **kw)
+    )
+    schema = {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}
+    ask = lambda: ollama.structured(  # noqa: E731
+        str(tmp_path / str(len(seen))), instructions="Sum up.",
+        content=[{"type": "input_text", "text": "x"}], schema=schema, name="n",
+    )  # fmt: skip
+
+    assert asyncio.run(ask())["summary"] == "ok"
+    assert "format" in seen[0] and "format" not in seen[1]
+    assert '"required": ["summary"]' in seen[1]["messages"][0]["content"]
+
+    # The server's answer is remembered: no second 501 round trip.
+    asyncio.run(ask())
+    assert len(seen) == 3 and "format" not in seen[2]
+
+
+def test_ollama_structured_request(env, tmp_path):
+    import asyncio
+
+    env.setenv("EARWITNESS_OLLAMA_URL", "http://10.8.96.3:11434/")
+    env.setattr(ollama, "_constrained", None)
+    seen = _fake_ollama(env, {"message": {"role": "assistant", "content": '{"summary": "a street"}'}})
+    jpeg = base64.b64encode(b"\xff\xd8fake").decode()
+    schema = {"type": "object", "properties": {"summary": {"type": "string"}}, "required": ["summary"]}
+
+    result = asyncio.run(
+        ollama.structured(
+            str(tmp_path),
+            instructions="Describe it.",
+            content=[
+                {"type": "input_text", "text": "Frame 1:"},
+                {"type": "input_image", "image_url": "data:image/jpeg;base64," + jpeg},
+            ],
+            schema=schema,
+            name="report",
+        )
+    )
+
+    assert result == {"summary": "a street", "_model": "gemma4"}
+    assert seen[0]["url"] == "http://10.8.96.3:11434/api/chat"
+    body = seen[0]["body"]
+    assert body["model"] == "gemma4"
+    assert body["format"] == schema
+    assert body["stream"] is False
+    assert body["options"]["num_ctx"] >= 16384
+    assert body["messages"][0] == {"role": "system", "content": "Describe it."}
+    assert body["messages"][1]["images"] == [jpeg]
+    assert body["messages"][1]["content"] == "Frame 1:\n\n[image 1]"
+
+    # A second identical call is answered from the case's cache.
+    asyncio.run(
+        ollama.structured(
+            str(tmp_path), instructions="Describe it.",
+            content=[
+                {"type": "input_text", "text": "Frame 1:"},
+                {"type": "input_image", "image_url": "data:image/jpeg;base64," + jpeg},
+            ],
+            schema=schema, name="report",
+        )
+    )  # fmt: skip
+    assert len(seen) == 1
+
+
+def test_ollama_missing_model_is_explained(env, tmp_path):
+    import asyncio
+
+    env.setenv("EARWITNESS_OLLAMA_URL", "http://vps:11434")
+    env.setenv("EARWITNESS_OLLAMA_MODEL", "gemma4:27b")
+    env.setattr(ollama, "_constrained", None)
+    _fake_ollama(env, {"error": "model 'gemma4:27b' not found"}, status=404)
+
+    with pytest.raises(RuntimeError, match="ollama pull gemma4:27b"):
+        asyncio.run(
+            ollama.structured(
+                str(tmp_path), instructions="x",
+                content=[{"type": "input_text", "text": "y"}], schema={"type": "object"}, name="n",
+            )
+        )  # fmt: skip
+
+
+def test_ollama_audio_is_sent_as_wav(env, tmp_path):
+    """Ollama rejects MP3 ("unrecognized audio format"): the transcript converts to WAV."""
+    import asyncio
+    import subprocess
+
+    mp3 = tmp_path / "speech.mp3"
+    subprocess.run(
+        ["ffmpeg", "-nostdin", "-v", "error", "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+         str(mp3)],
+        check=True,
+    )  # fmt: skip
+    env.setenv("EARWITNESS_OLLAMA_URL", "http://vps:11434")
+    env.setattr(ollama, "_constrained", True)
+    seen = _fake_ollama(env, {"message": {"content": '{"segments": [{"start": 0, "end": 1, "text": "hello"}]}'}})
+
+    result = asyncio.run(ollama.transcribe(str(tmp_path), str(mp3)))
+
+    assert result["text"] == "hello" and result["model"] == "gemma4"
+    audio = base64.b64decode(seen[0]["body"]["messages"][1]["images"][0])
+    assert audio[:4] == b"RIFF" and audio[8:12] == b"WAVE"
+
+    with pytest.raises(RuntimeError, match="only one model"):
+        asyncio.run(ollama.transcribe(str(tmp_path), str(mp3), "check"))
