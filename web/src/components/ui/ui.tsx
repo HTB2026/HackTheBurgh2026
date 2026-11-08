@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type CSSProperties, type ReactNode } from 'react'
+import { googleMapsUrl } from '../../lib/geo'
 import { CONFIDENCE, GLOSSARY, SEVERITY, type Accent } from '../../lib/plain'
 
 export function Icon({ name, className = '', style, title }: { name: string; className?: string; style?: CSSProperties; title?: string }) {
@@ -128,6 +129,17 @@ export function ConfBar({ level, compact }: { level: string; compact?: boolean }
       </span>
       <span className="conf-word">{c.level ? `${c.word} evidence` : c.word}</span>
     </span>
+  )
+}
+
+/** Small icon link that opens a place in Google Maps (pin for exact points, the area for wide estimates). */
+export function MapsLink({ lat, lon, radiusM, label }: { lat: number; lon: number; radiusM?: number | null; label?: string }) {
+  const wide = !!radiusM && radiusM >= 2000
+  const tip = label ?? (wide ? 'Open this area in Google Maps' : 'Open in Google Maps')
+  return (
+    <a className="copy maps-link" href={googleMapsUrl(lat, lon, radiusM)} target="_blank" rel="noreferrer" onClick={(e) => e.stopPropagation()} data-tip={tip} aria-label={tip}>
+      <Icon name="map-location-dot" />
+    </a>
   )
 }
 

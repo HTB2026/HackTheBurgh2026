@@ -3,6 +3,7 @@ import { DATA_LABEL, unitFor } from '../../lib/plain'
 import { bytes, mmss, niceDate } from '../../lib/format'
 import { usePlayback } from '../../lib/playback'
 import { CopyButton } from './ui'
+import { googleMapsUrl } from '../../lib/geo'
 
 const ISO = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/
 
@@ -125,7 +126,7 @@ export function DataView({ data, depth = 0 }: { data: Record<string, unknown> | 
               {latlon[0].toFixed(5)}, {latlon[1].toFixed(5)}
             </span>{' '}
             <CopyButton text={`${latlon[0]}, ${latlon[1]}`} label="Copy coordinates" />{' '}
-            <a className="link" href={`https://www.google.com/maps/search/?api=1&query=${latlon[0]},${latlon[1]}`} target="_blank" rel="noreferrer">
+            <a className="link" href={googleMapsUrl(latlon[0], latlon[1], typeof data.radius_km === 'number' ? data.radius_km * 1000 : typeof data.accuracy_m === 'number' ? data.accuracy_m : null)} target="_blank" rel="noreferrer">
               Open in Google Maps
             </a>
           </dd>

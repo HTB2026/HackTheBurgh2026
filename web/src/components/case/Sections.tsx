@@ -7,7 +7,7 @@ import { usePlayback, usePlayhead } from '../../lib/playback'
 import { useElementSize } from '../../lib/hooks'
 import { bytes, dateShort, mmss, niceDate } from '../../lib/format'
 import { artifactTab, BULLET_LABEL, CONFIDENCE, GLOSSARY, modulePlain, SEVERITY, TABS, type TabKey } from '../../lib/plain'
-import { CopyButton, Icon, SevChip, SourceChip, Term } from '../ui/ui'
+import { CopyButton, Icon, MapsLink, SevChip, SourceChip, Term } from '../ui/ui'
 import { DataView, JsonTree } from '../ui/Data'
 import { Timeline } from '../viz/Timeline'
 import { radiusText, type MapPoint } from '../viz/MapView'
@@ -379,7 +379,7 @@ export function MapSection({ points, gps, legendOnly }: { points: MapPoint[]; gp
                   <span className={`dot-k ${p.kind === 'ai-candidate' ? 'lead' : p.kind === 'ai' || p.kind === 'inferred' ? 'ai' : ''}`} /> {p.label}
                 </td>
                 <td className="mono num coord">
-                  {p.lat.toFixed(5)}, {p.lon.toFixed(5)} <CopyButton text={`${p.lat}, ${p.lon}`} label="Copy coordinates" />
+                  {p.lat.toFixed(5)}, {p.lon.toFixed(5)} <CopyButton text={`${p.lat}, ${p.lon}`} label="Copy coordinates" /> <MapsLink lat={p.lat} lon={p.lon} radiusM={p.accuracy_m} />
                 </td>
                 <td className="mono num coord">{radiusText(p.accuracy_m)}</td>
               </tr>

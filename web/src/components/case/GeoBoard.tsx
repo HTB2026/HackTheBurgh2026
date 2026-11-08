@@ -4,7 +4,7 @@ import type { Artifact, Finding } from '../../lib/types'
 import type { CaseState } from '../../lib/state'
 import { usePlayback } from '../../lib/playback'
 import { mmss } from '../../lib/format'
-import { Icon, Modal } from '../ui/ui'
+import { CopyButton, Icon, MapsLink, Modal } from '../ui/ui'
 import { distanceText, radiusText, type MapPoint, type MapZone } from '../viz/MapView'
 import { MapSection } from './Sections'
 import { MapOrGlobe } from './MapOrGlobe'
@@ -157,6 +157,7 @@ function CandidateRow({ state, c, i, rank, lead, frame, still }: { state: CaseSt
           <span className="mono">
             {c.latitude.toFixed(4)}, {c.longitude.toFixed(4)}
           </span>{' '}
+          <MapsLink lat={c.latitude} lon={c.longitude} radiusM={c.radius_km * 1000} />{' '}
           · within {radiusText(c.radius_km * 1000).slice(1)}
           {typeof c.probability === 'number' ? ` · proposed at ${Math.round(c.probability * 100)}%` : ''}
         </div>
@@ -265,7 +266,9 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
         <div className="loc-meta muted">
           {located && (
             <span className="mono">
-              {d.latitude.toFixed(5)}, {d.longitude?.toFixed(5)}
+              {d.latitude.toFixed(5)}, {d.longitude?.toFixed(5)}{' '}
+              <CopyButton text={`${d.latitude}, ${d.longitude}`} label="Copy coordinates" />{' '}
+              <MapsLink lat={d.latitude} lon={d.longitude ?? 0} radiusM={d.radius_km ? d.radius_km * 1000 : null} />
             </span>
           )}
           {located && d.radius_km ? ` · within ${radiusText(d.radius_km * 1000).slice(1)}` : ''}
@@ -276,7 +279,8 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
           {!located && !searching && gps && (
             <>
               <span className="mono">
-                {gps.lat.toFixed(5)}, {gps.lon.toFixed(5)}
+                {gps.lat.toFixed(5)}, {gps.lon.toFixed(5)}{' '}
+                <CopyButton text={`${gps.lat}, ${gps.lon}`} label="Copy coordinates" /> <MapsLink lat={gps.lat} lon={gps.lon} radiusM={gps.accuracy_m} />
               </span>{' '}
               · stored in the file itself. Anyone with the file can read it.
             </>

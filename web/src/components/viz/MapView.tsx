@@ -1,4 +1,4 @@
-import { hasLocation } from '../../lib/geo'
+import { googleMapsUrl, hasLocation } from '../../lib/geo'
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import { mockName } from '../../lib/mock'
@@ -197,6 +197,7 @@ export function MapView({ points, zones = [], height = 360 }: { points: MapPoint
         // other candidate places: small grey dots, no circle
         L.circleMarker(ll, { radius: 5, color: '#9a9a9a', weight: 1.5, fillColor: '#6b6b6b', fillOpacity: 0.9 })
           .bindTooltip(esc(p.label ?? 'Lead'), { direction: 'top' })
+          .bindPopup(`<b>${esc(p.label ?? 'Lead')}</b><br/>${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}<br/><a href="${googleMapsUrl(p.lat, p.lon, p.accuracy_m)}" target="_blank" rel="noreferrer">Open in Google Maps ↗</a>`)
           .addTo(g)
         bounds.extend(ll)
         continue
@@ -219,7 +220,7 @@ export function MapView({ points, zones = [], height = 360 }: { points: MapPoint
         icon: L.divIcon({ className: '', html: `<div class="map-pin ${ai ? 'ai' : ''}"></div>`, iconSize: [18, 18], iconAnchor: [9, 9] }),
       })
         .bindPopup(
-          `<b>${esc(p.label ?? 'Point')}</b><br/>${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}${p.accuracy_m ? `<br/>within ${radiusText(p.accuracy_m).slice(1)}` : ''}<br/>${ai ? 'AI estimate' : 'Measured'}`,
+          `<b>${esc(p.label ?? 'Point')}</b><br/>${p.lat.toFixed(5)}, ${p.lon.toFixed(5)}${p.accuracy_m ? `<br/>within ${radiusText(p.accuracy_m).slice(1)}` : ''}<br/>${ai ? 'AI estimate' : 'Measured'}<br/><a href="${googleMapsUrl(p.lat, p.lon, p.accuracy_m)}" target="_blank" rel="noreferrer">Open in Google Maps ↗</a>`,
         )
         .bindTooltip(esc(p.label ?? ''), { direction: 'top', offset: [0, -10] })
         .addTo(g)

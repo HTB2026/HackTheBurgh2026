@@ -1111,3 +1111,6 @@ a[data-tip],
   font-size: 12px;
   align-self: center;
 }
+a.maps-link {
+  text-decoration: none;
+}
