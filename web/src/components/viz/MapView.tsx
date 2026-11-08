@@ -57,7 +57,10 @@ export function MapView({ points, height = 360 }: { points: MapPoint[]; height?:
 
   useEffect(() => {
     if (!el.current) return
-    const m = L.map(el.current, { zoomControl: true, attributionControl: true, worldCopyJump: true, scrollWheelZoom: false })
+    // Fractional zoom, so the wheel handler below can follow a trackpad continuously. Leaflet's
+    // own wheel zoom is off: it drops wheel events while its zoom animation runs, so trackpad
+    // scrolling barely registered.
+    const m = L.map(el.current, { zoomControl: true, attributionControl: true, worldCopyJump: true, scrollWheelZoom: false, zoomSnap: 0, zoomDelta: 0.5 })
     const preview = !!mockName()
     const street = preview ? mockMapLayer() : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
@@ -95,7 +98,21 @@ export function MapView({ points, height = 360 }: { points: MapPoint[]; height?:
     layer.current = L.layerGroup().addTo(m)
     const ro = new ResizeObserver(() => m.invalidateSize())
     ro.observe(el.current)
+
+    // Scroll to zoom, like the globe: every wheel event zooms at once around the point under the
+    // pointer, in proportion to the scroll (a mouse notch is about half a level; a trackpad
+    // zooms smoothly), and the page does not scroll while the pointer is over the map.
+    const container = el.current
+    const onWheel = (e: WheelEvent) => {
+      e.preventDefault()
+      const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? container.clientHeight : 1)
+      const step = -Math.max(-240, Math.min(240, px)) / 200
+      const z = Math.max(m.getMinZoom(), Math.min(m.getMaxZoom(), m.getZoom() + step))
+      if (z !== m.getZoom()) m.setZoomAround(m.mouseEventToContainerPoint(e as unknown as MouseEvent), z, { animate: false })
+    }
+    container.addEventListener('wheel', onWheel, { passive: false })
     return () => {
+      container.removeEventListener('wheel', onWheel)
       ro.disconnect()
       m.remove()
       map.current = null
