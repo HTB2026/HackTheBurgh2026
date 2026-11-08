@@ -45,11 +45,17 @@ _CANDIDATES = 4
 _VERIFIED = 0.6
 _USER_AGENT = "earwitness-forensics/0.2 (hackathon research demo)"
 
+
 def _has_location(lat: Any, lon: Any, radius_km: Any) -> bool:
     """A continent-wide estimate does not identify a location."""
     return (
-        all(isinstance(v, (int, float)) and math.isfinite(v) for v in (lat, lon, radius_km))
-        and abs(lat) <= 90 and abs(lon) <= 180 and 0 <= radius_km < 2500
+        all(
+            isinstance(v, (int, float)) and math.isfinite(v)
+            for v in (lat, lon, radius_km)
+        )
+        and abs(lat) <= 90
+        and abs(lon) <= 180
+        and 0 <= radius_km < 2500
     )
 
 
@@ -329,7 +335,10 @@ class Geo:
     name = "geo"
     title = "GEOLOCATION"
     description = "Where it was filmed, from pixels and sound alone: candidates proposed, then verified against Wikipedia photos and satellite imagery."
-    depends = ["provenance", "transcript", "ocr", "vision", "sounds", "light"]
+    # No up-front dependencies: geo is the longest check, so it starts at once
+    # (frames, intake) and waits for the clue modules only right before it asks
+    # the model, giving up its worker slot meanwhile (ctx.waiting).
+    depends: list[str] = []
 
     async def run(self, ctx: CaseContext, out: Reporter) -> None:
         provider = ai.for_case(ctx.options)
@@ -493,10 +502,11 @@ class Geo:
 
         # ---- non-visual clues (never the file's metadata or GPS) --------------
         out.progress(0.3, "collecting clues from sound, text and light")
-        speech = await ctx.wait_for("transcript") or {}
-        ocr = await ctx.wait_for("ocr") or {}
-        heard = await ctx.wait_for("sounds") or {}
-        light = await ctx.wait_for("light") or {}
+        async with ctx.waiting():
+            speech = await ctx.wait_for("transcript") or {}
+            ocr = await ctx.wait_for("ocr") or {}
+            heard = await ctx.wait_for("sounds") or {}
+            light = await ctx.wait_for("light") or {}
         ocr_lines += list(ocr.get("lines", []))[:30]
         clues = [
             "Text read in the frames (OCR): "
@@ -696,11 +706,15 @@ class Geo:
             verdict["confidence"] = "low"
             verdict["radius_km"] = max(float(verdict["radius_km"]), 50.0)
 
-        located = _has_location(verdict["latitude"], verdict["longitude"], verdict["radius_km"])
+        located = _has_location(
+            verdict["latitude"], verdict["longitude"], verdict["radius_km"]
+        )
         verified = verified and located
 
         # ---- report -----------------------------------------------------------------------
-        provenance = await ctx.wait_for("provenance") or {}
+        async with ctx.waiting():
+            provenance = await ctx.wait_for("provenance") or {}
+
         gps = provenance.get("location")
         error_km = None
         points = [
@@ -718,7 +732,8 @@ class Geo:
         if gps:
             if located:
                 error_km = _haversine_km(
-                    (gps["lat"], gps["lon"]), (verdict["latitude"], verdict["longitude"])
+                    (gps["lat"], gps["lon"]),
+                    (verdict["latitude"], verdict["longitude"]),
                 )
             points.append(
                 {
@@ -797,7 +812,11 @@ class Geo:
         }  # fmt: skip
         out.finding(
             "notice",
-            (f"{'Located' if verified else 'Pixels suggest'}: {verdict['place']} (±{verdict['radius_km']:.0f} km, {verdict['confidence']} confidence)" if located else "Location unknown"),
+            (
+                f"{'Located' if verified else 'Pixels suggest'}: {verdict['place']} (±{verdict['radius_km']:.0f} km, {verdict['confidence']} confidence)"
+                if located
+                else "Location unknown"
+            ),
             detail,
             time_s=None if still else frames[0][0],
             kind="inferred",

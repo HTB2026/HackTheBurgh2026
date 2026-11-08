@@ -508,6 +508,7 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
 
     # Heavy modules are numpy/OpenCV bound; a small limit keeps the UI lively.
     gate = asyncio.Semaphore(int(os.environ.get("EARWITNESS_PARALLEL", "4")))
+    ctx._gate = gate
 
     async def one(module: Any) -> None:
         reporter = Reporter(module.name, ctx, case.emit)
