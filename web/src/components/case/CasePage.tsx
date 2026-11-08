@@ -12,7 +12,7 @@ import { ago, dateShort, mmss } from '../../lib/format'
 import { mediaNoun, modulePlain, VERDICT } from '../../lib/plain'
 import { mockName } from '../../lib/mock'
 import { Alert, Badge, Icon } from '../ui/ui'
-import { AI_LABEL, AiPicker } from '../AiPicker'
+import { AiPicker, aiName } from '../AiPicker'
 import type { AiProvider, Health } from '../../lib/types'
 import { Player } from './Player'
 import { PhotoStage, RegionList } from './PhotoStage'
@@ -368,7 +368,7 @@ function CaseHead({
                       : may === 'login'
                         ? 'Log in to run every check again'
                         : aiProvider && aiProvider !== info?.ai_provider
-                          ? `Run every check again with ${AI_LABEL[aiProvider]}`
+                          ? `Run every check again with ${aiName(aiProvider)}`
                           : 'Run every check again'
                   }
                   aria-label="Rerun"

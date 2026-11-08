@@ -8,6 +8,8 @@ import { SEVERITY } from '../../lib/plain'
 import { rankFindings } from '../../lib/facts'
 import { Icon, SevChip } from '../ui/ui'
 import { EnhanceModal, type EnhanceBox } from './EnhanceModal'
+import { GpuLens, type GpuLensMode } from './GpuLens'
+import { useGpu } from '../../lib/gpu'
 
 interface View {
   z: number // zoom relative to "fit"
@@ -15,7 +17,18 @@ interface View {
   ty: number
 }
 
-type LensKey = 'none' | 'invert' | 'grey' | 'red' | 'green' | 'blue' | 'edges' | 'saturate' | 'levels'
+type LensKey = 'none' | 'invert' | 'grey' | 'red' | 'green' | 'blue' | 'edges' | 'saturate' | 'levels' | `gpu-${GpuLensMode}`
+
+/** Lenses computed on the GPU at full resolution (shown only when the browser has WebGPU). */
+const GPU_LENSES: { key: LensKey; mode: GpuLensMode; label: string; tip: string; gain: [number, number, number] }[] = [
+  { key: 'gpu-ela', mode: 'ela', label: 'Error level (ELA)', tip: 'Re-saves the picture as JPEG and shows how much each pixel changes. Areas pasted from a picture saved at a different quality glow differently from the rest.', gain: [5, 60, 20] },
+  { key: 'gpu-noise', mode: 'noise', label: 'Noise residual', tip: 'The fine grain left after removing the picture itself. Pasted, cloned or smoothed areas have a different grain from the rest.', gain: [2, 40, 10] },
+  { key: 'gpu-contrast', mode: 'contrast', label: 'Local contrast', tip: 'How much detail each small area holds. Retouched or blurred areas go dark.', gain: [1, 16, 4] },
+  { key: 'gpu-sobel', mode: 'sobel', label: 'Edges', tip: 'Edge strength at full resolution: halos and double edges around pasted objects.', gain: [1, 16, 3] },
+]
+
+/** Formats browsers decode, so the GPU lenses can read the original file rather than the re-encoded viewing copy. */
+const DECODABLE = new Set(['JPEG', 'JPG', 'MPO', 'PNG', 'WEBP', 'GIF', 'BMP'])
 
 const LENSES: { key: LensKey; label: string; tip: string }[] = [
   { key: 'none', label: 'Normal', tip: 'The picture as stored' },
@@ -135,6 +148,17 @@ export function PhotoStage({
   const rf = useRegionFocus()
   const focused = useFocusedRegion()
   const lastFocus = useRef(0)
+  const gpuState = useGpu()
+  const gpu = gpuState === 'loading' ? null : gpuState
+  const gpuLens = GPU_LENSES.find((l) => l.key === lens) ?? null
+  const [elaQuality, setElaQuality] = useState(90)
+  const [gains, setGains] = useState<Record<string, number>>({})
+  const gain = gpuLens ? (gains[gpuLens.key] ?? gpuLens.gain[2]) : 1
+  const [gpuStatus, setGpuStatus] = useState<{ loading: boolean; error: string | null }>({ loading: false, error: null })
+  // Error level analysis needs the original bytes: the viewing copy has been re-encoded.
+  const original = info.original_url && DECODABLE.has((info.image?.format ?? '').toUpperCase()) ? info.original_url : null
+  const gpuSrc = original ?? mediaUrl
+  const lensList = gpu ? [...LENSES.filter((l) => l.key !== 'edges'), ...GPU_LENSES] : LENSES
 
   useEffect(() => {
     if (!fitted && stage.width && stage.height) {
@@ -306,6 +330,20 @@ export function PhotoStage({
           zoomAt(2, p.x, p.y)
         }}
       >
+        {gpu && gpuLens && gpuSrc && (
+          <GpuLens
+            gpu={gpu}
+            src={gpuSrc}
+            mode={gpuLens.mode}
+            quality={elaQuality}
+            gain={gain}
+            view={{ tx: view.tx, ty: view.ty, scale }}
+            iw={iw}
+            ih={ih}
+            pixelated={pixelated}
+            onState={setGpuStatus}
+          />
+        )}
         <div className="photo-frame" style={frame}>
           {mediaUrl ? (
             <img
@@ -313,7 +351,7 @@ export function PhotoStage({
               src={mediaUrl}
               alt={info.filename}
               draggable={false}
-              style={{ filter: lensFilter(lens, levels) }}
+              style={{ filter: lensFilter(lens, levels), visibility: gpuLens && !gpuStatus.error ? 'hidden' : undefined }}
             />
           ) : (
             info.thumb_url && <img className="photo-img" src={info.thumb_url} alt="" draggable={false} />
@@ -388,7 +426,12 @@ export function PhotoStage({
             </span>
           )}
           {overlay && <span>OVERLAY: {overlay.title.toUpperCase().slice(0, 48)}</span>}
-          {lens !== 'none' && <span>LENS: {LENSES.find((l) => l.key === lens)?.label.toUpperCase()}</span>}
+          {lens !== 'none' && <span>LENS: {lensList.find((l) => l.key === lens)?.label.toUpperCase()}</span>}
+          {gpuLens && (
+            <span data-tip={original ? 'Computed on your GPU from the original file' : 'Computed on your GPU from the viewing copy (the original format cannot be decoded by the browser), so error levels reflect that copy'}>
+              GPU · {gpuStatus.error ? `FAILED: ${gpuStatus.error.slice(0, 40)}` : gpuStatus.loading ? 'LOADING…' : original ? 'ORIGINAL FILE' : 'VIEWING COPY'}
+            </span>
+          )}
         </div>
         <div className="stage-tc mono">
           {Math.round(scale * 100)}%
@@ -419,13 +462,44 @@ export function PhotoStage({
           1:1
         </button>
         <span className="ctl-sep" />
-        <select className="input ctl-select" value={lens} onChange={(e) => setLens(e.target.value as LensKey)} aria-label="Lens" data-tip={LENSES.find((l) => l.key === lens)?.tip}>
-          {LENSES.map((l) => (
-            <option key={l.key} value={l.key}>
-              {l.label}
-            </option>
-          ))}
+        <select className="input ctl-select" value={lens} onChange={(e) => setLens(e.target.value as LensKey)} aria-label="Lens" data-tip={lensList.find((l) => l.key === lens)?.tip}>
+          {gpu ? (
+            <>
+              <optgroup label="Picture">
+                {lensList.filter((l) => !l.key.startsWith('gpu-')).map((l) => (
+                  <option key={l.key} value={l.key}>
+                    {l.label}
+                  </option>
+                ))}
+              </optgroup>
+              <optgroup label="Forensic (GPU)">
+                {GPU_LENSES.map((l) => (
+                  <option key={l.key} value={l.key}>
+                    {l.label}
+                  </option>
+                ))}
+              </optgroup>
+            </>
+          ) : (
+            LENSES.map((l) => (
+              <option key={l.key} value={l.key}>
+                {l.label}
+              </option>
+            ))
+          )}
         </select>
+        {gpuLens?.mode === 'ela' && (
+          <label className="lens-slider" data-tip="JPEG quality used for the re-save. Try the quality the file was likely saved at (often 85–95).">
+            <span>Q {elaQuality}</span>
+            <input type="range" min={50} max={98} step={1} value={elaQuality} onChange={(e) => setElaQuality(Number(e.target.value))} aria-label="Re-save quality" />
+          </label>
+        )}
+        {gpuLens && (
+          <label className="lens-slider" data-tip="Amplify the differences">
+            <span>×{gain}</span>
+            <input type="range" min={gpuLens.gain[0]} max={gpuLens.gain[1]} step={1} value={gain} onChange={(e) => setGains((g) => ({ ...g, [gpuLens.key]: Number(e.target.value) }))} aria-label="Gain" />
+          </label>
+        )}
         {lens === 'levels' && (
           <span className="levels" data-tip="Drag the two ends: everything darker than the left end goes black, everything brighter than the right end goes white">
             <input type="range" min={0} max={0.98} step={0.01} value={levels[0]} onChange={(e) => setLevels(([, hi]) => [Math.min(Number(e.target.value), hi - 0.02), hi])} aria-label="Black point" />

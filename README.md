@@ -62,7 +62,7 @@ With two or more providers set up, each case picks its AI provider: "AI model" u
 options** when uploading, or the picker next to **Rerun** on a case (the API
 takes `ai_provider=openai|gemini|ollama` on upload and rerun). Answers are cached per
 case and provider (`openai-cache/`, `gemini-cache/`, `ollama-cache/`), so switching back is free.
-The Ollama provider ("Gemma" in the UI) runs every AI check on one self-hosted model,
+The Ollama provider ("Gemma", marked **experimental** in the UI) runs every AI check on one self-hosted model,
 so the transcript has a single reading instead of two cross-checked ones. Pull the
 model on the Ollama host first (`ollama pull gemma4`).
 
