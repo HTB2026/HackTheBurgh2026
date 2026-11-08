@@ -3,7 +3,7 @@
  * copied to a texture) and measure, per frame, how much the picture changed, plus per-pixel
  * flicker at the frequencies where 50/60 Hz-grid lamp flicker lands after sampling.
  */
-import type { Gpu } from './gpu'
+import { copyVideoFrame, type Gpu } from './gpu'
 import { FRAMES } from './shaders/frames.wgsl'
 
 export interface ScanResult {
@@ -107,7 +107,7 @@ export async function scanFrames(
     if (times.length && Math.abs(t - times[times.length - 1]) < 1e-4) return
     const k = times.length
     if (k >= maxFrames) return
-    device.queue.copyExternalImageToTexture({ source: video }, { texture: frameTex }, [vw, vh])
+    copyVideoFrame(device, video, frameTex)
     const b = new ArrayBuffer(32)
     new Uint32Array(b, 0, 4).set([w, h, k, k === 0 ? 1 : 0])
     new Float32Array(b, 16, 4).set([t, fa50, fa60, fc])

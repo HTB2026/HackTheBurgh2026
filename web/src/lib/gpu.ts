@@ -234,3 +234,30 @@ export function drawTexture(gpu: Gpu, ctx: GPUCanvasContext, texture: GPUTexture
   pass.end()
   gpu.device.queue.submit([enc.finish()])
 }
+
+// Firefox's WebGPU can't copy from a <video> (only ImageBitmap, image, canvas, OffscreenCanvas):
+// once that fails, draw each frame to a canvas first. drawImage is synchronous, so the canvas
+// holds exactly the frame the video is showing at the call.
+let videoCopyWorks = true
+const videoCanvases = new WeakMap<HTMLVideoElement, OffscreenCanvas>()
+
+/** Copy the frame a <video> is showing now into a texture of the video's size. */
+export function copyVideoFrame(device: GPUDevice, video: HTMLVideoElement, texture: GPUTexture) {
+  const size: [number, number] = [video.videoWidth, video.videoHeight]
+  if (videoCopyWorks) {
+    try {
+      device.queue.copyExternalImageToTexture({ source: video }, { texture }, size)
+      return
+    } catch (e) {
+      if (!(e instanceof TypeError)) throw e
+      videoCopyWorks = false
+    }
+  }
+  let canvas = videoCanvases.get(video)
+  if (!canvas || canvas.width !== size[0] || canvas.height !== size[1]) {
+    canvas = new OffscreenCanvas(size[0], size[1])
+    videoCanvases.set(video, canvas)
+  }
+  canvas.getContext('2d')!.drawImage(video, 0, 0)
+  device.queue.copyExternalImageToTexture({ source: canvas }, { texture }, size)
+}

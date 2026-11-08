@@ -3,7 +3,7 @@
  * enlarge it, align each frame to the middle one (sub-pixel, by trying every shift), average.
  * Averaging aligned frames cancels sensor and compression noise, so text and plates read better.
  */
-import type { Gpu } from './gpu'
+import { copyVideoFrame, type Gpu } from './gpu'
 import { STACK } from './shaders/stack.wgsl'
 
 export interface Region {
@@ -137,7 +137,7 @@ export async function stackFrames(gpu: Gpu, src: FrameSource, region: Region, ce
   let bestErr = Infinity
   for (const k of order) {
     await src.at(centre + k / fps)
-    device.queue.copyExternalImageToTexture({ source: src.video }, { texture: frameTex }, [vw, vh])
+    copyVideoFrame(device, src.video, frameTex)
     writeUni([0, 0], 1, 0)
     device.queue.submit([run(P.crop, [U, [1, frameTex.createView()], [2, sampler], [3, { buffer: cur }]], gx, gy).finish()])
     if (k === 0) {
