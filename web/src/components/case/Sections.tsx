@@ -353,7 +353,7 @@ export function mapPoints(state: CaseState, facts: Facts): MapPoint[] {
   return out
 }
 
-export function MapSection({ points, gps }: { points: MapPoint[]; gps: Facts['gps'] }) {
+export function MapSection({ points, gps, legendOnly }: { points: MapPoint[]; gps: Facts['gps']; legendOnly?: boolean }) {
   return (
     <>
       {gps && (
@@ -367,7 +367,7 @@ export function MapSection({ points, gps }: { points: MapPoint[]; gps: Facts['gp
         yellow line joins GPS and answer.
       </p>
       <div className="map-box">
-        <MapView points={points} height={420} />
+        {!legendOnly && <MapView points={points} height={420} />}
         <table className="dtable map-legend">
           <tbody>
             {points.map((p, i) => (

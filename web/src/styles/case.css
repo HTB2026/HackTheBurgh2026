@@ -1852,3 +1852,4 @@ td.lb-title > * {
 .verdict-block .alert {
   margin-top: 10px;
 }
+.badge-link { color: inherit; text-decoration: none; }
