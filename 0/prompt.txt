@@ -1,0 +1,31 @@
+now merge the pr and push to prod.
+
+---
+
+pull and push to prod
+
+---
+
+[Image #7] why is the ai model toggle not here
+
+---
+
+it SHOULDDD. did you push this new commit to prod? im the exclusive prod pusher
+
+---
+
+but they worked before.
+
+---
+
+git pull and push again
+
+---
+
+<task-notification>
+<task-id>beq0c1ma5</task-id>
+<tool-use-id>toolu_01DfYdZCYFuk1972pFWvZDFt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-relesto-Downloads-earwitness/eea4a098-d905-48e7-844b-3ff2f3a0cde3/tasks/beq0c1ma5.output</output-file>
+<status>completed</status>
+<summary>Background command "Poll health for AI providers" completed (exit code 0)</summary>
+</task-notification>
