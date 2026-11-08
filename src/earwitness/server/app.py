@@ -1,6 +1,7 @@
 """HTTP + WebSocket front door for the forensic suite."""
 
 import asyncio
+import logging
 import os
 import shutil
 from collections.abc import AsyncIterator
@@ -33,6 +34,7 @@ _ROOT = os.path.dirname(
 _WEB = os.path.join(_ROOT, "web", "dist")
 
 # earwitness.db has loaded .env by now.
+_log = logging.getLogger("earwitness.server")
 store = CaseStore(os.environ.get("EARWITNESS_CASES", os.path.join(_ROOT, "cases")))
 
 
@@ -134,6 +136,9 @@ async def upload(
         options["ai_provider"] = _ai_provider(ai_provider)
 
     case = store.create(file.filename or "evidence.mp4", options)
+    case.owner = user.public()
+    case.record("uploaded", case.owner)
+    store.save_meta(case)
 
     # Written aside and renamed when complete, so a restart mid-upload leaves no
     # half file that looks like evidence (see CaseStore._load_existing).
@@ -156,10 +161,36 @@ async def get_case(case_id: str) -> dict[str, Any]:
     return {"summary": case.summary(), "events": case.events}
 
 
+def _may_change(user: auth.User, case: Any, verb: str) -> None:
+    if not auth.can_change(user, case):
+        owner = (case.owner or {}).get("name") or "the person who uploaded it"
+
+        raise HTTPException(403, f"Only {owner} can {verb} this case.")
+
+
+@app.get("/api/me")
+async def me(user: auth.User = Depends(auth.require_user)) -> dict[str, Any]:
+    """Who the token belongs to, as the pages show it, and whether they are an admin."""
+    return {**user.public(), "admin": user.admin}
+
+
 @app.delete("/api/cases/{case_id}")
 async def delete_case(
-    case_id: str, _: auth.User = Depends(auth.require_user)
+    case_id: str, user: auth.User = Depends(auth.require_user)
 ) -> dict[str, Any]:
+    case = store.cases.get(case_id)
+
+    if case is not None:
+        _may_change(user, case, "delete")
+        # The case folder, with its handling record, goes too: the log keeps who.
+        _log.info(
+            "case %s (%s) deleted by %s [%s]",
+            case_id,
+            case.filename,
+            user.name,
+            user.id,
+        )
+
     deleted = store.delete(case_id)
     await db.delete_case(case_id)
 
@@ -216,9 +247,10 @@ async def rerun(
     case_id: str,
     modules: list[str] | None = None,
     ai_provider: str | None = None,
-    _: auth.User = Depends(auth.require_user),
+    user: auth.User = Depends(auth.require_user),
 ) -> dict[str, Any]:
     case = _case(case_id)
+    _may_change(user, case, "rerun")
 
     if case.task and not case.task.done():
         raise HTTPException(409, "already running")
@@ -227,6 +259,15 @@ async def rerun(
         case.options["ai_provider"] = _ai_provider(ai_provider)
         store.save_meta(case)
 
+    who = user.public()
+    case.record(
+        "reran",
+        who,
+        **({"modules": modules} if modules else {}),
+        ai_provider=case.options.get("ai_provider"),
+    )
+    store.save_meta(case)
+    case.note = f"Run again at the request of {who['name']}."
     store.restart(case, only=modules)
 
     return case.summary()

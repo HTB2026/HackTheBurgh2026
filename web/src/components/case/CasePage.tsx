@@ -5,9 +5,10 @@ import { MediaKindContext, RegionContext, RegionFocus } from '../../lib/region'
 import type { CaseState } from '../../lib/state'
 import { isTerminal } from '../../lib/state'
 import { api } from '../../lib/api'
-import { mmss } from '../../lib/format'
 import { deriveFacts, type Facts } from '../../lib/facts'
 import { useHealth } from '../../lib/health'
+import { canChange, ownerName, useAuth } from '../../lib/auth'
+import { ago, dateShort, mmss } from '../../lib/format'
 import { mediaNoun, modulePlain, VERDICT } from '../../lib/plain'
 import { mockName } from '../../lib/mock'
 import { Alert, Badge, Icon } from '../ui/ui'
@@ -16,9 +17,10 @@ import type { AiProvider, Health } from '../../lib/types'
 import { Player } from './Player'
 import { PhotoStage, RegionList } from './PhotoStage'
 import { FindingsBoard } from './Findings'
-import { GeoBoard, geoFinding } from './GeoBoard'
+import { geoFinding, LocationHero } from './GeoBoard'
+import { hasLocation } from '../../lib/geo'
 import { Reveal } from './Reveal'
-import { Answers, Detail, EvidenceFile, Exhibits, exhibitItems, hasNotes, KeyMoments, MapSection, mapPoints, MethodSection, NotesSection } from './Sections'
+import { Answers, Detail, EvidenceFile, Exhibits, exhibitItems, hasNotes, KeyMoments, mapPoints, MethodSection, NotesSection } from './Sections'
 
 export type SectionKey = 'findings' | 'exhibits' | 'geo' | 'map' | 'notes' | 'file' | 'method'
 export const SECTIONS: SectionKey[] = ['findings', 'exhibits', 'geo', 'map', 'notes', 'file', 'method']
@@ -46,8 +48,6 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   const still = facts.kind === 'image'
   const noun = mediaNoun(facts.kind)
   const points = useMemo(() => mapPoints(state, facts), [state, facts])
-  const locationAnswered = facts.answers.some((a) => a.key === 'where' && a.confidence !== 'unknown') || !!facts.gps
-  const [mapDefaulted, setMapDefaulted] = useState(false)
   const geo = geoFinding(state)
   const dossier = state.artifacts['brief:dossier'] ?? state.artifactOrder.map((id) => state.artifacts[id]).find((a) => a.kind === 'dossier') ?? null
   const [revealing, setRevealing] = useState(false)
@@ -59,24 +59,12 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
     document.title = info ? `${VERDICT[facts.verdict].short} · ${info.filename} · EARWITNESS` : 'EARWITNESS'
   }, [info, facts.verdict])
 
-  // The map opens by itself only when the case has a location answer.
-  // The geolocation board opens by itself whenever there is a geo finding.
-  useEffect(() => {
-    if (mapDefaulted || facts.running) return
-    if (geo) {
-      setMapDefaulted(true)
-      setOpen((o) => new Set(o).add('geo'))
-    } else if (points.length) {
-      setMapDefaulted(true)
-      if (locationAnswered) setOpen((o) => new Set(o).add('map'))
-    }
-  }, [points.length, locationAnswered, facts.running, mapDefaulted, !!geo])
-
   // Deep link: #/case/{id}/{section} opens and scrolls to that item.
   useEffect(() => {
     if (!info) return
     const { section: s, topic } = sectionFor(section)
-    const target = (s === 'map' || s === 'geo') && geo ? 'geo' : s === 'map' && !points.length ? 'exhibits' : s
+    // The location section is always on the page, at the top.
+    const target = s === 'map' || s === 'geo' ? 'geo' : s
     if (!target) return
     setOpen((o) => new Set(o).add(target))
     const t = setTimeout(() => {
@@ -135,12 +123,14 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
               </div>
             ) : (
               <>
+                <LocationHero state={state} facts={facts} points={points}>
+                  {dossier && (
+                    <button className="reveal-btn" onClick={() => setRevealing(true)}>
+                      <Icon name="eye" /> Everything else this {noun} gives away
+                    </button>
+                  )}
+                </LocationHero>
                 <VerdictLine state={state} facts={facts} conn={conn} />
-                {dossier && (
-                  <button className="reveal-btn" onClick={() => setRevealing(true)}>
-                    <Icon name="eye" /> What this {noun} gives away
-                  </button>
-                )}
 
                 <section className="block">
                   <div className={`video-col ${still ? 'photo-col' : ''}`}>
@@ -164,11 +154,12 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
                 </section>
 
                 <section className="block">
-                  <h2 className="block-title">What we found</h2>
+                  <h2 className="block-title">What else we found</h2>
                   {facts.running && !facts.answers.length ? (
                     <p className="muted">The answers are written once every check has finished.</p>
                   ) : (
-                    <Answers state={state} facts={facts} openFinding={openFinding} />
+                    // "Where" is the location section's job; it would only repeat it here.
+                    <Answers state={state} facts={{ ...facts, answers: facts.answers.filter((a) => a.key !== 'where') }} openFinding={openFinding} />
                   )}
                 </section>
 
@@ -199,30 +190,6 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
                     >
                       <Exhibits state={state} geoBoard={!!geo} />
                     </Detail>
-                    {geo && (
-                      <Detail
-                        id="geo"
-                        title={`Where it was ${still ? 'taken' : 'filmed'}`}
-                        desc="Places the AI proposed from the pixels and sounds, each checked against real-world photos and satellite views."
-                        count={geo.data?.verified ? 'verified' : 'lead'}
-                        open={open.has('geo')}
-                        onToggle={() => toggle('geo')}
-                      >
-                        <GeoBoard state={state} facts={facts} points={points} />
-                      </Detail>
-                    )}
-                    {!geo && points.length > 0 && (
-                      <Detail
-                        id="map"
-                        title="Map"
-                        desc={facts.gps ? 'The GPS position stored in the file, and any estimate from the picture.' : `Where the picture suggests it was ${still ? 'taken' : 'filmed'}.`}
-                        count={points.length}
-                        open={open.has('map')}
-                        onToggle={() => toggle('map')}
-                      >
-                        <MapSection points={points} gps={facts.gps} />
-                      </Detail>
-                    )}
                     {notes && (
                       <Detail
                         id="notes"
@@ -309,6 +276,9 @@ function CaseHead({
   const [aiProvider, setAiProvider] = useState<AiProvider | null>(null)
   const chosen = aiProvider ?? info?.ai_provider ?? null
   const still = facts.kind === 'image'
+  const auth = useAuth()
+  const may = canChange(auth, info?.owner)
+  const uploaded = info?.history?.find((h) => h.action === 'uploaded')
   return (
     <section className={`case-head v-${facts.verdict}`}>
       {info?.thumb_url && <div className="cover" style={{ backgroundImage: `url(${info.thumb_url})` }} />}
@@ -339,6 +309,17 @@ function CaseHead({
                   {mmss(info.duration_s)}
                 </Badge>
               )}
+              {(() => {
+                const g = geoFinding(state)?.data
+                if (!g || !hasLocation(g.latitude, g.longitude, g.radius_km)) return null
+                return (
+                  <a href="#d-geo" className="badge-link" onClick={(e) => { e.preventDefault(); document.getElementById('d-geo')?.scrollIntoView({ behavior: 'smooth' }) }}>
+                    <Badge icon="location-crosshairs" accent="red" tip={g.verified ? 'Where it was taken, checked against real-world imagery' : 'Best lead on where it was taken (not verified)'}>
+                      {g.place}
+                    </Badge>
+                  </a>
+                )
+              })()}
               <Badge icon="location-dot" accent={facts.gps ? 'red' : 'grey'} tip={facts.gps ? 'The file stores its own GPS position' : 'No GPS position in the file'}>
                 {facts.gps ? 'GPS in file' : 'No GPS'}
               </Badge>
@@ -346,6 +327,16 @@ function CaseHead({
                 <Badge icon="user" accent={facts.faces.recognisable ? 'pink' : 'grey'} tip="Faces found, and how many are large and sharp enough to recognise">
                   {facts.faces.total} face{facts.faces.total === 1 ? '' : 's'}
                   {facts.faces.recognisable ? `, ${facts.faces.recognisable} recognisable` : ''}
+                </Badge>
+              )}
+              {info.owner && (
+                <Badge
+                  icon="user"
+                  accent="blue"
+                  tip={`Uploaded by ${ownerName(info.owner)}${uploaded ? ` on ${dateShort(uploaded.at)}` : ''}. Only they can re-run or delete it.`}
+                >
+                  {info.owner.name ?? 'Signed-in user'}
+                  {uploaded ? ` · ${ago(uploaded.at)}` : ''}
                 </Badge>
               )}
               {still && facts.generator && (
@@ -366,12 +357,20 @@ function CaseHead({
             )}
             {!mockName() && (
               <>
-                <AiPicker health={health} value={chosen} onChange={setAiProvider} compact />
+                {may !== false && <AiPicker health={health} value={chosen} onChange={setAiProvider} compact />}
                 <button
                   className="icon-btn"
                   onClick={() => onRerun(aiProvider)}
-                  disabled={facts.running}
-                  data-tip={aiProvider && aiProvider !== info?.ai_provider ? `Run every check again with ${AI_LABEL[aiProvider]}` : 'Run every check again'}
+                  disabled={facts.running || may === false}
+                  data-tip={
+                    may === false
+                      ? `Only ${ownerName(info?.owner)}, who uploaded it, can re-run this case`
+                      : may === 'login'
+                        ? 'Log in to run every check again'
+                        : aiProvider && aiProvider !== info?.ai_provider
+                          ? `Run every check again with ${AI_LABEL[aiProvider]}`
+                          : 'Run every check again'
+                  }
                   aria-label="Rerun"
                 >
                   <Icon name="rotate-right" />

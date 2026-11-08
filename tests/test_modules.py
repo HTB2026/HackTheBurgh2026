@@ -278,3 +278,21 @@ def test_interrupted_cases_resume_after_restart(tmp_path, planted):
 
     assert events[-1]["type"] == "done"
     assert [e["seq"] for e in events] == list(range(len(events)))
+
+
+def test_exif_fractions_do_not_break_the_event_stream(tmp_path):
+    """PIL hands EXIF values as IFDRational; one must not wedge a case's stream."""
+    from PIL.TiffImagePlugin import IFDRational
+
+    from earwitness.modules.base import _jsonable
+
+    assert _jsonable({"dpi": (IFDRational(72, 1), IFDRational(1, 3))}) == {
+        "dpi": [72.0, 0.333333]
+    }
+
+    store = CaseStore(str(tmp_path / "cases"))
+    case = store.create("photo.jpg", {})
+    case.emit({"type": "log", "module": "core", "message": IFDRational(72, 1)})
+
+    json.dumps(case.events)
+    assert case.events[0]["message"] == "72.0"

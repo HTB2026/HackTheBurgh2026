@@ -45,6 +45,14 @@ _CANDIDATES = 4
 _VERIFIED = 0.6
 _USER_AGENT = "earwitness-forensics/0.2 (hackathon research demo)"
 
+def _has_location(lat: Any, lon: Any, radius_km: Any) -> bool:
+    """A continent-wide estimate does not identify a location."""
+    return (
+        all(isinstance(v, (int, float)) and math.isfinite(v) for v in (lat, lon, radius_km))
+        and abs(lat) <= 90 and abs(lon) <= 180 and 0 <= radius_km < 2500
+    )
+
+
 _PROPOSE_SCHEMA = {
     "type": "object",
     "additionalProperties": False,
@@ -688,6 +696,9 @@ class Geo:
             verdict["confidence"] = "low"
             verdict["radius_km"] = max(float(verdict["radius_km"]), 50.0)
 
+        located = _has_location(verdict["latitude"], verdict["longitude"], verdict["radius_km"])
+        verified = verified and located
+
         # ---- report -----------------------------------------------------------------------
         provenance = await ctx.wait_for("provenance") or {}
         gps = provenance.get("location")
@@ -695,18 +706,20 @@ class Geo:
         points = [
             {"lat": c["latitude"], "lon": c["longitude"], "label": f"Lead {i + 1}: {c['place']}",
              "accuracy_m": float(c["radius_km"]) * 1000, "kind": "ai-candidate"}
-            for i, c in enumerate(candidates)
+            for i, c in enumerate(candidates) if _has_location(c["latitude"], c["longitude"], c["radius_km"])
         ]  # fmt: skip
-        points.append({
-            "lat": verdict["latitude"], "lon": verdict["longitude"],
-            "label": f"{'Verified' if verified else 'Best guess'}: {verdict['place']}",
-            "accuracy_m": float(verdict["radius_km"]) * 1000, "kind": "ai",
-        })  # fmt: skip
+        if located:
+            points.append({
+                "lat": verdict["latitude"], "lon": verdict["longitude"],
+                "label": f"{'Verified' if verified else 'Best guess'}: {verdict['place']}",
+                "accuracy_m": float(verdict["radius_km"]) * 1000, "kind": "ai",
+            })  # fmt: skip
 
         if gps:
-            error_km = _haversine_km(
-                (gps["lat"], gps["lon"]), (verdict["latitude"], verdict["longitude"])
-            )
+            if located:
+                error_km = _haversine_km(
+                    (gps["lat"], gps["lon"]), (verdict["latitude"], verdict["longitude"])
+                )
             points.append(
                 {
                     "lat": gps["lat"],
@@ -775,8 +788,8 @@ class Geo:
 
         guess = {
             "place": verdict["place"], "region": "", "country": "",
-            "latitude": verdict["latitude"], "longitude": verdict["longitude"],
-            "radius_km": verdict["radius_km"], "confidence": verdict["confidence"],
+            "latitude": verdict["latitude"] if located else None, "longitude": verdict["longitude"] if located else None,
+            "radius_km": verdict["radius_km"], "confidence": verdict["confidence"], "location_available": located,
             "verified": verified, "match": scores.get(best, {}).get("match") if best >= 0 else None,
             "candidates": candidates, "error_km": error_km, "model": proposal.get("_model"),
             # Kept for the case brief: verification replaces the old second-opinion check.
@@ -784,7 +797,7 @@ class Geo:
         }  # fmt: skip
         out.finding(
             "notice",
-            f"{'Located' if verified else 'Pixels suggest'}: {verdict['place']} (±{verdict['radius_km']:.0f} km, {verdict['confidence']} confidence)",
+            (f"{'Located' if verified else 'Pixels suggest'}: {verdict['place']} (±{verdict['radius_km']:.0f} km, {verdict['confidence']} confidence)" if located else "Location unknown"),
             detail,
             time_s=None if still else frames[0][0],
             kind="inferred",

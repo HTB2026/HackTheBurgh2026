@@ -145,7 +145,7 @@ const camFor = (p: MapPoint): Cam => {
  * A 3D globe of the geolocation answer: candidate places, the verified answer and GPS as pins,
  * uncertainty as caps on the surface, arcs from each lead to the answer.
  */
-export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: MapPoint[]; height?: number; focus: { index: number; nonce: number } }) {
+export function Globe({ gpu, points, height = 420, focus, rowsFly = false }: { gpu: Gpu; points: MapPoint[]; height?: number; focus: { index: number; nonce: number }; rowsFly?: boolean }) {
   const { ref, ctx, size } = useGpuCanvas(gpu)
   const pts = useMemo(() => points.filter((p) => isFinite(p?.lat) && isFinite(p?.lon)).slice(0, MAX_POINTS), [points])
   const [earth, setEarth] = useState<GPUTexture | null>(null)
@@ -382,7 +382,7 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
         <span>
           <i style={{ background: '#ff4040' }} /> GPS in the file
         </span>
-        <span className="faint">drag to turn · scroll to zoom · double-click to return · click a row below to fly there</span>
+        <span className="faint">drag to turn · scroll to zoom · double-click to return{rowsFly ? ' · click a row below to fly there' : ''}</span>
         {noImagery && <span className="faint">(satellite imagery unavailable)</span>}
       </div>
     </div>

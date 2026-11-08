@@ -12,11 +12,16 @@ s apt-get update -qq
 s apt-get install -y -qq git curl build-essential rsync ffmpeg tesseract-ocr tesseract-ocr-eng nginx docker.io >/dev/null
 
 # ffmpeg must be >= 5.1 (-fps_mode). Ubuntu 22.04 ships 4.4: use a static build then.
-if ! ffmpeg -hide_banner -h full 2>/dev/null | grep -q -- '-fps_mode'; then
+# (grep -c, not -q: -q exits early, ffmpeg dies of SIGPIPE and pipefail fails the test.)
+if ! ffmpeg -hide_banner -h full 2>/dev/null | grep -c -- '-fps_mode' >/dev/null; then
   echo "--> installing static ffmpeg (system one is too old)"
   curl -fsSL https://johnvansickle.com/ffmpeg/releases/ffmpeg-release-amd64-static.tar.xz -o /tmp/ffmpeg.tar.xz
   tar -xf /tmp/ffmpeg.tar.xz -C /tmp
-  s cp /tmp/ffmpeg-*-amd64-static/ffmpeg /tmp/ffmpeg-*-amd64-static/ffprobe /usr/local/bin/
+  # Copy aside, then rename: a running ffmpeg keeps its old file ("Text file busy" otherwise).
+  for tool in ffmpeg ffprobe; do
+    s cp /tmp/ffmpeg-*-amd64-static/$tool /usr/local/bin/.$tool.new
+    s mv -f /usr/local/bin/.$tool.new /usr/local/bin/$tool
+  done
 fi
 
 echo "--> node 22"

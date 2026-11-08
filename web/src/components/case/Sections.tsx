@@ -1,17 +1,17 @@
+import { hasLocation } from '../../lib/geo'
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import type { Answer, Artifact, Finding } from '../../lib/types'
 import type { CaseState, ModuleState } from '../../lib/state'
 import type { Facts } from '../../lib/facts'
 import { usePlayback, usePlayhead } from '../../lib/playback'
 import { useElementSize } from '../../lib/hooks'
-import { bytes, mmss, niceDate } from '../../lib/format'
+import { bytes, dateShort, mmss, niceDate } from '../../lib/format'
 import { artifactTab, BULLET_LABEL, CONFIDENCE, GLOSSARY, modulePlain, SEVERITY, TABS, type TabKey } from '../../lib/plain'
 import { CopyButton, Icon, SevChip, SourceChip, Term } from '../ui/ui'
 import { DataView, JsonTree } from '../ui/Data'
 import { Timeline } from '../viz/Timeline'
-import { MapView, radiusText, type MapPoint } from '../viz/MapView'
-import { Globe } from '../viz/Globe'
-import { useGpu } from '../../lib/gpu'
+import { radiusText, type MapPoint } from '../viz/MapView'
+import { MapOrGlobe } from './MapOrGlobe'
 import { ArtifactGroup } from './Artifacts'
 
 const arts = (state: CaseState) => state.artifactOrder.map((id) => state.artifacts[id])
@@ -344,22 +344,19 @@ export function mapPoints(state: CaseState, facts: Facts): MapPoint[] {
     if (!out.some((q) => Math.abs(q.lat - p.lat) < 1e-4 && Math.abs(q.lon - p.lon) < 1e-4 && cls(q.kind) === cls(p.kind))) out.push(p)
   }
   if (facts.gps) add({ lat: facts.gps.lat, lon: facts.gps.lon, accuracy_m: facts.gps.accuracy_m, label: 'GPS stored in the file', kind: 'gps', heading_deg: facts.gps.heading_deg ?? null })
-  for (const a of arts(state).filter((x) => x.kind === 'map')) for (const p of a.data?.points ?? []) if (isFinite(p?.lat) && isFinite(p?.lon)) add(p)
+  for (const a of arts(state).filter((x) => x.kind === 'map')) for (const p of a.data?.points ?? []) if (hasLocation(p?.lat, p?.lon, ['ai', 'inferred', 'ai-candidate'].includes(p?.kind) ? (p.accuracy_m == null ? undefined : p.accuracy_m / 1000) : undefined)) add(p)
   for (const f of state.findings) {
     const lat = f.data?.latitude
     const lon = f.data?.longitude
-    if (typeof lat === 'number' && typeof lon === 'number')
+    if (hasLocation(lat, lon, f.kind === 'inferred' ? f.data?.radius_km : undefined))
       add({ lat, lon, accuracy_m: f.data?.radius_km ? f.data.radius_km * 1000 : undefined, label: f.title, kind: f.kind === 'inferred' ? 'ai' : 'measured' })
   }
   return out
 }
 
-export function MapSection({ points, gps }: { points: MapPoint[]; gps: Facts['gps'] }) {
-  const gpuState = useGpu()
-  const gpu = gpuState === 'loading' ? null : gpuState
-  const [view, setView] = useState<'map' | 'globe'>('map')
+export function MapSection({ points, gps, legendOnly }: { points: MapPoint[]; gps: Facts['gps']; legendOnly?: boolean }) {
+  // Clicking a row flies the globe (when this section shows the map and it is in globe view).
   const [focus, setFocus] = useState({ index: -1, nonce: 0 })
-  const globe = gpu && view === 'globe'
   return (
     <>
       {gps && (
@@ -373,20 +370,11 @@ export function MapSection({ points, gps }: { points: MapPoint[]; gps: Facts['gp
         yellow line joins GPS and answer.
       </p>
       <div className="map-box">
-        {gpu && (
-          <div className="tabs map-mode" role="radiogroup" aria-label="Map view">
-            {(['map', 'globe'] as const).map((m) => (
-              <button key={m} type="button" role="radio" aria-checked={view === m} className={view === m ? 'active' : ''} onClick={() => setView(m)} data-tip={m === 'globe' ? '3D globe: flies to the answer, shows every place considered (WebGPU)' : 'Street and satellite map'}>
-                {m === 'map' ? 'Map' : 'Globe'}
-              </button>
-            ))}
-          </div>
-        )}
-        {globe ? <Globe gpu={gpu} points={points} height={420} focus={focus} /> : <MapView points={points} height={420} />}
+        {!legendOnly && <MapOrGlobe points={points} height={420} focus={focus} />}
         <table className="dtable map-legend">
           <tbody>
             {points.map((p, i) => (
-              <tr key={i} className={globe ? 'fly' : undefined} onClick={globe ? () => setFocus((f) => ({ index: i, nonce: f.nonce + 1 })) : undefined} data-tip={globe ? 'Fly there' : undefined}>
+              <tr key={i} className={legendOnly ? undefined : 'fly'} onClick={legendOnly ? undefined : () => setFocus((f) => ({ index: i, nonce: f.nonce + 1 }))} data-tip={legendOnly ? undefined : 'On the globe: fly there'}>
                 <td className="place">
                   <span className={`dot-k ${p.kind === 'ai-candidate' ? 'lead' : p.kind === 'ai' || p.kind === 'inferred' ? 'ai' : ''}`} /> {p.label}
                 </td>
@@ -538,6 +526,22 @@ export function EvidenceFile({ state, facts, caseId }: { state: CaseState; facts
           </div>
         ))}
       </dl>
+      <h4 className="sub">Who has handled it</h4>
+      <p className="muted small">Every upload and re-run, by the signed-in account that asked for it. The fingerprints above show the file itself never changed.</p>
+      {info.history && info.history.length > 0 ? (
+        <ol className="custody">
+          {info.history.map((h, i) => (
+            <li key={i}>
+              <span className="mono faint">{dateShort(h.at)}</span>{' '}
+              <b>{h.action === 'uploaded' ? 'Uploaded' : h.action === 'reran' ? (h.modules?.length ? `Re-ran ${h.modules.join(', ')}` : 'Re-ran every check') : h.action}</b>{' '}
+              by {h.by?.name ?? 'a signed-in user'}
+              {h.action === 'reran' && h.ai_provider ? <span className="faint"> (AI: {h.ai_provider})</span> : null}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="faint small">Not recorded: this case was uploaded before logins were required.</p>
+      )}
       {info.container && (
         <>
           <h4 className="sub">Container</h4>

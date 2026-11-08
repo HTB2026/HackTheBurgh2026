@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, uploadEvidence } from '../lib/api'
 import { useHealth } from '../lib/health'
+import { canChange, ownerName, useAuth } from '../lib/auth'
 import { AI_HINT, AI_LABEL, aiChoices } from './AiPicker'
 import type { AiProvider } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
@@ -21,6 +22,8 @@ function VerdictPill({ v }: { v: Verdict | undefined }) {
 }
 
 function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdict?: Verdict; summary: string | null; onDelete: () => void }) {
+  const auth = useAuth()
+  const may = canChange(auth, c.owner)
   return (
     <article className={`card case-card v-${v ?? 'unknown'}`}>
       <a className="card-img" href={`#/case/${c.id}`}>
@@ -51,14 +54,26 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
           <span data-tip={`Examined ${dateShort(c.created)}`}>
             <Icon name="calendar" /> {ago(c.created)}
           </span>
+          {c.owner && (
+            <span className="card-owner" data-tip={`Uploaded by ${ownerName(c.owner)}`}>
+              {c.owner.picture ? <img src={c.owner.picture} alt="" referrerPolicy="no-referrer" /> : <Icon name="user" />} {c.owner.name ?? 'signed-in user'}
+            </span>
+          )}
           <span className="grow" />
           <button
             className="iconbtn"
+            disabled={may === false}
             onClick={(e) => {
               e.preventDefault()
               onDelete()
             }}
-            data-tip="Delete this case"
+            data-tip={
+              may === false
+                ? `Only ${ownerName(c.owner)}, who uploaded it, can delete this case`
+                : may === 'login'
+                  ? 'Log in to delete this case'
+                  : 'Delete this case'
+            }
             aria-label="Delete case"
           >
             <Icon name="trash-can" />
@@ -156,7 +171,11 @@ export function Landing({ examine }: { examine?: boolean }) {
 
   const remove = async (c: CaseSummary) => {
     if (!confirm(`Delete the case for ${c.filename}? Its copy of the file and all results are removed. This cannot be undone.`)) return
-    await api.remove(c.id).catch(() => null)
+    try {
+      await api.remove(c.id)
+    } catch (e) {
+      setErr(String((e as Error).message ?? e))
+    }
     refresh()
   }
 

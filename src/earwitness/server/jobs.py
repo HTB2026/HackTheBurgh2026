@@ -19,6 +19,7 @@ from earwitness.modules.base import CaseContext
 from earwitness.modules.base import Reporter
 from earwitness.modules.base import Skip
 from earwitness.modules.base import run_tool
+from earwitness.server import auth
 
 
 class Case:
@@ -37,6 +38,10 @@ class Case:
         self.task: asyncio.Task[None] | None = None
         # Logged right after the `case` event of the next run (e.g. why it restarted).
         self.note: str | None = None
+        # Who uploaded it ({id, name, picture}, public) and every hand that
+        # touched it since. Kept in case.json: events.jsonl is wiped by a rerun.
+        self.owner: dict[str, Any] | None = None
+        self.history: list[dict[str, Any]] = []
         self._log = None
 
     @property
@@ -47,12 +52,17 @@ class Case:
 
     def emit(self, event: dict[str, Any]) -> None:
         event = {"seq": len(self.events), "ts": round(time.time(), 3), **event}
+        # Encode before keeping it: an event that cannot be sent would otherwise
+        # stay in memory and break every page load and WebSocket of the case.
+        # Anything still not JSON-able becomes text; memory then matches disk.
+        line = json.dumps(event, default=str)
+        event = json.loads(line)
         self.events.append(event)
 
         if self._log is None:
             self._log = open(os.path.join(self.workdir, "events.jsonl"), "a")
 
-        self._log.write(json.dumps(event) + "\n")
+        self._log.write(line + "\n")
         self._log.flush()
 
         for queue in list(self.listeners):
@@ -88,7 +98,15 @@ class Case:
             "place": where["answer"] if located else None,
             "place_confidence": where["confidence"] if located else None,
             "ai_provider": self.options.get("ai_provider"),
+            "owner": self.owner,
+            "history": self.history,
         }
+
+    def record(self, action: str, by: dict[str, Any] | None, **extra: Any) -> None:
+        """Add a line to the handling record (call ``CaseStore.save_meta`` after)."""
+        self.history.append(
+            {"action": action, "at": round(time.time(), 3), "by": by, **extra}
+        )
 
 
 class CaseStore:
@@ -118,6 +136,17 @@ class CaseStore:
                 continue
 
             case.created = meta.get("created", case.created)
+            case.owner = meta.get("owner")
+
+            if case.owner is None and case.options.get("uploaded_by"):
+                # Uploaded before names were recorded: the owner is known, not named.
+                case.owner = {
+                    "id": auth.public_id(case.options["uploaded_by"]),
+                    "name": None,
+                    "picture": None,
+                }
+
+            case.history = meta.get("history", [])
             events_path = os.path.join(workdir, "events.jsonl")
 
             if os.path.isfile(events_path):
@@ -146,6 +175,8 @@ class CaseStore:
                     "filename": case.filename,
                     "created": case.created,
                     "options": case.options,
+                    "owner": case.owner,
+                    "history": case.history,
                 },
                 handle,
             )
@@ -456,6 +487,8 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
                 else None,
                 "original_url": f"/api/cases/{case.id}/files/{os.path.basename(case.evidence_path)}",
                 **(await _custody(case, probe)),
+                "owner": case.owner,
+                "history": case.history,
                 "modules": [
                     {"name": m.name, "title": m.title, "description": m.description}
                     for m in modules

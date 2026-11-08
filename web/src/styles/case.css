@@ -146,8 +146,8 @@
 .seal.v-running .seal-icon { background: rgb(0 0 0 / 0.4); }
 
 /* ---------- calm body: one column, lots of space ---------- */
+/* Same width as the home page and header (.wrap / --wrap). */
 .case-page {
-  max-width: 1080px;
   padding-bottom: 32px;
   font-size: 16px;
 }
@@ -1919,7 +1919,7 @@ td.lb-title > * {
 }
 
 /* Geolocation globe (WebGPU) */
-.map-box {
+.map-switchable {
   position: relative;
 }
 .map-mode {
@@ -1975,3 +1975,4 @@ td.lb-title > * {
 .map-legend tr.fly:hover td {
   background: color-mix(in srgb, var(--link) 10%, transparent);
 }
+.badge-link { color: inherit; text-decoration: none; }

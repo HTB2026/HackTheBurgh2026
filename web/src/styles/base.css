@@ -279,6 +279,13 @@ select {
 .iconbtn:hover {
   color: var(--red-t);
 }
+.iconbtn:disabled {
+  opacity: 0.35;
+  cursor: not-allowed;
+}
+.iconbtn:disabled:hover {
+  color: var(--faint);
+}
 .input {
   padding: 7px 10px;
   border-radius: 4px;
@@ -1072,6 +1079,25 @@ a[data-tip],
 .card-meta .hot,
 .card-meta .hot i {
   color: var(--orange-t);
+}
+.card-meta .card-owner {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+.card-owner img {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  vertical-align: -3px;
+  margin-right: 3px;
+}
+/* Handling record in the evidence file section */
+.custody {
+  margin: 0 0 14px;
+  padding-left: 18px;
+  font-size: 13px;
+  line-height: 1.7;
 }
 
 /* AI model picker (Landing "More options" and next to Rerun) */

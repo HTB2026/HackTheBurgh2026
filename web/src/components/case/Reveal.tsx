@@ -1,3 +1,4 @@
+import { hasLocation } from '../../lib/geo'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import L from 'leaflet'
 import type { Artifact } from '../../lib/types'
@@ -189,8 +190,9 @@ export function Reveal({ state, dossier, caseId, onClose }: { state: CaseState; 
   const best = gd ? winnerIndex(gd) : 0
   const sat = gd ? state.artifacts[`geo:ref${best}_sat`] : undefined
   const firstWhere = lines.findIndex((l) => l.category === 'where')
-  const whereLat = typeof gd?.latitude === 'number' ? gd.latitude : null
-  const whereLon = typeof gd?.longitude === 'number' ? gd.longitude : null
+  const located = gd && hasLocation(gd.latitude, gd.longitude, gd.radius_km)
+  const whereLat = located ? gd.latitude : null
+  const whereLon = located ? gd.longitude : null
 
   const next = useCallback(() => setStep((s) => Math.min(lines.length, s + 1)), [lines.length])
   const prev = useCallback(() => setStep((s) => Math.max(-1, s - 1)), [])
