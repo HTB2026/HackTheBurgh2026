@@ -656,21 +656,38 @@
   max-width: 90ch;
   font-size: 13px;
 }
-.loc-more {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px 22px;
+/* Extras: a tab bar along the bottom edge of the panel, content opens under it. */
+.loc-bar {
+  margin: 14px -20px -14px;
+  border-top: 1px solid var(--line);
+  border-radius: 0 0 8px 8px;
+  background: var(--bg);
 }
-.loc-more > details { flex: 0 1 auto; }
-.loc-more > details[open] { flex-basis: 100%; }
-.loc-more > details > summary {
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 13.5px;
+.loc-bar button { padding: 10px 14px; }
+.loc-bar button i { color: var(--faint); }
+.loc-bar button.active i { color: var(--red-t); }
+.loc-bar:not(:last-child) {
+  margin-bottom: 0;
+  border-radius: 0;
 }
-.loc-more > details > summary i { margin-right: 6px; color: var(--faint); }
-.loc-more > details[open] > summary { margin-bottom: 10px; }
-.loc-more .gb-clues { margin: 0; }
+.loc-extra {
+  margin: 0 -20px -14px;
+  padding: 14px 20px 16px;
+  border-top: 1px solid var(--line);
+}
+.loc-extra .loc-how { margin: 0; }
+.loc-clues {
+  margin: 0;
+  padding: 12px 14px;
+  max-height: 260px;
+  overflow: auto;
+  border-radius: 6px;
+  background: var(--bg);
+  color: #cfcfcf;
+  font-family: var(--mono);
+  font-size: 12.5px;
+  white-space: pre-wrap;
+}
 /* The map (or globe) fills its column, however tall the evidence beside it is. */
 .loc-map .map-switchable,
 .loc-map .globe,
@@ -681,6 +698,9 @@
 }
 @media (max-width: 900px) {
   .loc-hero { padding: 14px 14px 12px; }
+  .loc-bar, .loc-extra { margin-inline: -14px; }
+  .loc-bar:last-child, .loc-extra { margin-bottom: -12px; }
+  .loc-bar { overflow-x: auto; }
   .loc-grid { grid-template-columns: minmax(0, 1fr); }
 }
 /* Map | Globe switch: beside Leaflet's zoom buttons, clear of its layer picker. */

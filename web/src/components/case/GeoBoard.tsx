@@ -211,6 +211,14 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
   const gps = facts.gps
   const w = win >= 0 ? cands[win] : undefined
 
+  const [extra, setExtra] = useState<'how' | 'others' | 'clues' | 'key' | null>(null)
+  const extras = [
+    { key: 'how' as const, icon: 'circle-question', label: 'How it was worked out', count: null },
+    ...(others.length ? [{ key: 'others' as const, icon: 'list-ol', label: 'Other places considered', count: others.length }] : []),
+    ...(clues ? [{ key: 'clues' as const, icon: 'ear-listen', label: 'Clues from sound and text', count: null }] : []),
+    ...(points.length ? [{ key: 'key' as const, icon: 'map-location-dot', label: 'Exact coordinates', count: null }] : []),
+  ]
+
   // Nothing to say and nothing coming: one quiet line, the rest of the page takes over.
   if (!f && !gps && !searching && !points.length)
     return (
@@ -305,45 +313,33 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
 
       {children}
 
-      <div className="loc-more">
-        <details>
-          <summary>
-            <Icon name="circle-question" /> How this was worked out
-          </summary>
-          <p className="loc-how muted">
-            The AI looks only at the pixels and sounds (never the file’s GPS), proposes places, then each place is checked against a Wikipedia photo of its
-            landmark and a satellite view. A place is <b>verified</b> only when the real-world pictures clearly match the {noun}.
-          </p>
-        </details>
-        {others.length > 0 && (
-          <details>
-            <summary>
-              <Icon name="list-ol" /> {others.length} other place{others.length === 1 ? '' : 's'} the AI considered
-            </summary>
+      <div className="loc-bar tabs" role="tablist" aria-label="More about the location">
+        {extras.map((x) => (
+          <button key={x.key} type="button" role="tab" aria-selected={extra === x.key} className={extra === x.key ? 'active' : ''} onClick={() => setExtra(extra === x.key ? null : x.key)}>
+            <Icon name={x.icon} /> {x.label}
+            {x.count != null && <span className="n">{x.count}</span>}
+          </button>
+        ))}
+      </div>
+      {extra && (
+        <div className="loc-extra" role="tabpanel">
+          {extra === 'how' && (
+            <p className="loc-how muted">
+              The AI looks only at the pixels and sounds (never the file’s GPS), proposes places, then each place is checked against a Wikipedia photo of its
+              landmark and a satellite view. A place is <b>verified</b> only when the real-world pictures clearly match the {noun}.
+            </p>
+          )}
+          {extra === 'others' && (
             <div className="gb-rows">
               {others.map((i, rank) => (
                 <CandidateRow key={i} state={state} c={cands[i]} i={i} rank={rank + 2} lead={leads[i]} frame={frame} still={still} />
               ))}
             </div>
-          </details>
-        )}
-        {clues && (
-          <details className="gb-clues">
-            <summary>
-              <Icon name="ear-listen" /> Non-visual clues the AI was given (sound, text, light)
-            </summary>
-            <pre>{clues}</pre>
-          </details>
-        )}
-        {points.length > 0 && (
-          <details>
-            <summary>
-              <Icon name="map-location-dot" /> Map key and exact coordinates
-            </summary>
-            <MapSection points={points} gps={gps} legendOnly />
-          </details>
-        )}
-      </div>
+          )}
+          {extra === 'clues' && <pre className="loc-clues">{clues}</pre>}
+          {extra === 'key' && <MapSection points={points} gps={gps} legendOnly />}
+        </div>
+      )}
     </section>
   )
 }
