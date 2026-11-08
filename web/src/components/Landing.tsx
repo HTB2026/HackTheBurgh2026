@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, uploadEvidence } from '../lib/api'
 import { useHealth } from '../lib/health'
 import { canChange, ownerName, useAuth } from '../lib/auth'
+import { FeedFilter, isFiltered, matches, useFeedFilter } from './FeedFilter'
 import { AI_EXPERIMENTAL, AI_HINT, AI_LABEL, aiChoices } from './AiPicker'
 import type { AiProvider } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
@@ -105,6 +106,13 @@ export function Landing({ examine }: { examine?: boolean }) {
   const heroPeaks = heroCase?.[0] ? (heroMeta[heroCase[0].id]?.peaks ?? null) : null
   const verdictFor = (c: CaseSummary): Verdict | undefined =>
     c.status !== 'done' ? 'running' : c.verdict !== undefined ? (c.verdict ? verdictOf(c.verdict) : 'unknown') : meta[c.id]?.verdict
+  const auth = useAuth()
+  const [filter, setFilter] = useFeedFilter()
+  const shown = useMemo(
+    () => (cases ? cases.filter((c) => matches(c, verdictFor(c), c.summary_plain ?? meta[c.id]?.summary ?? null, filter, auth.me?.id ?? null)) : null),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [cases, meta, filter, auth.me?.id],
+  )
   const [over, setOver] = useState(false)
   const [upload, setUpload] = useState<{ name: string; p: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
@@ -270,7 +278,11 @@ export function Landing({ examine }: { examine?: boolean }) {
             </Alert>
           )}
 
-          <SectionTitle icon="box-archive" accent="blue" small={cases ? `${cases.length} on file` : undefined}>
+          <SectionTitle
+            icon="box-archive"
+            accent="blue"
+            small={cases ? (isFiltered(filter) && shown ? `${shown.length} of ${cases.length}` : `${cases.length} on file`) : undefined}
+          >
             Recent cases
           </SectionTitle>
           {cases === null ? (
@@ -287,11 +299,23 @@ export function Landing({ examine }: { examine?: boolean }) {
           ) : cases.length === 0 ? (
             <Empty icon="folder-open">No cases yet. Examine a video or photo to open the first file.</Empty>
           ) : (
+            <>
+              <FeedFilter filter={filter} onChange={setFilter} cases={cases} verdictOf={verdictFor} />
+              {shown && shown.length === 0 ? (
+                <Empty icon="magnifying-glass">
+                  No case matches that.{' '}
+                  <button type="button" className="link" onClick={() => setFilter({ q: '', verdict: null, kind: null, located: null, mine: false })}>
+                    Show every case
+                  </button>
+                </Empty>
+              ) : (
             <div className="cards">
-              {cases.map((c) => (
+              {(shown ?? cases).map((c) => (
                 <CaseCard key={c.id} c={c} verdict={verdictFor(c)} summary={c.summary_plain ?? meta[c.id]?.summary ?? null} onDelete={() => remove(c)} />
               ))}
             </div>
+              )}
+            </>
           )}
         </div>
 
