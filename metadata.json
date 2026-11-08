@@ -3,8 +3,10 @@
   "checkpoint_id": "01M6WM9EJ923RYNPZK9MC4EXFW",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 2,
-  "files_touched": null,
+  "checkpoints_count": 12,
+  "files_touched": [
+    "src/earwitness/modules/geo.py"
+  ],
   "sessions": [
     {
       "metadata": "/0/metadata.json",
@@ -12,6 +14,13 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
@@ -22,14 +31,14 @@
     "api_call_count": 17
   },
   "redaction": {
-    "replacements": 6,
+    "replacements": 31,
     "layers": {
       "betterleaks": 3,
       "connection_string": 0,
       "credential_key": 0,
-      "credential_value": 0,
+      "credential_value": 17,
       "credentialed_uri": 0,
-      "entropy": 6,
+      "entropy": 14,
       "key_context": 0,
       "provider_token": 0,
       "shell_stdin": 0
