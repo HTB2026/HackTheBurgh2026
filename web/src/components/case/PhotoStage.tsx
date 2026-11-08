@@ -109,6 +109,14 @@ export function PhotoStage({
   const ih = info.image?.height || 3
   const s0 = stage.width && stage.height ? Math.min(stage.width / iw, stage.height / ih) : 1
   const fitView = useCallback((): View => ({ z: 1, tx: (stage.width - iw * s0) / 2, ty: (stage.height - ih * s0) / 2 }), [stage.width, stage.height, iw, ih, s0])
+  // Keep the picture in the frame: centred on an axis where it fits, edges never inside the frame where it is larger.
+  const clamp = useCallback(
+    (v: View): View => {
+      const axis = (t: number, shown: number, room: number) => (shown <= room ? (room - shown) / 2 : Math.min(0, Math.max(room - shown, t)))
+      return { z: v.z, tx: axis(v.tx, iw * s0 * v.z, stage.width), ty: axis(v.ty, ih * s0 * v.z, stage.height) }
+    },
+    [stage.width, stage.height, iw, ih, s0],
+  )
   const [view, setView] = useState<View>({ z: 1, tx: 0, ty: 0 })
   const [fitted, setFitted] = useState(false)
   const [drag, setDrag] = useState<{ x: number; y: number; tx: number; ty: number } | null>(null)
@@ -135,20 +143,26 @@ export function PhotoStage({
     }
   }, [fitted, stage.width, stage.height, fitView])
 
+  // A resized frame (window, layout) must not leave the picture off-frame.
+  useEffect(() => {
+    if (fitted) setView((v) => clamp(v))
+  }, [fitted, clamp])
+
   const scale = s0 * view.z // stage pixels per image pixel
   const frame = { left: view.tx, top: view.ty, width: iw * scale, height: ih * scale }
 
   const zoomAt = useCallback(
     (factor: number, cx?: number, cy?: number) => {
       setView((v) => {
-        const z = Math.min(60, Math.max(0.3, v.z * factor))
+        // Never smaller than "fit": zooming out further only adds black around the picture.
+        const z = Math.min(60, Math.max(1, v.z * factor))
         const f = z / v.z
         const px = cx ?? stage.width / 2
         const py = cy ?? stage.height / 2
-        return { z, tx: px - (px - v.tx) * f, ty: py - (py - v.ty) * f }
+        return clamp({ z, tx: px - (px - v.tx) * f, ty: py - (py - v.ty) * f })
       })
     },
-    [stage.width, stage.height],
+    [stage.width, stage.height, clamp],
   )
 
   const zoomToBox = useCallback(
@@ -159,9 +173,9 @@ export function PhotoStage({
       const z = Math.min(40, Math.max(1, 0.6 * Math.min(stage.width / bw, stage.height / bh)))
       const cxImg = (b.x + b.w / 2) * iw * s0 * z
       const cyImg = (b.y + b.h / 2) * ih * s0 * z
-      setView({ z, tx: stage.width / 2 - cxImg, ty: stage.height / 2 - cyImg })
+      setView(clamp({ z, tx: stage.width / 2 - cxImg, ty: stage.height / 2 - cyImg }))
     },
-    [stage.width, stage.height, iw, ih, s0],
+    [stage.width, stage.height, iw, ih, s0, clamp],
   )
 
   // A finding asked to be shown: zoom to its box.
@@ -173,10 +187,11 @@ export function PhotoStage({
 
   const reset = () => setView(fitView())
   const oneToOne = () => {
-    const z = 1 / s0
+    // A picture smaller than the frame is already shown at least 1:1 at "fit".
+    const z = Math.max(1, 1 / s0)
     const cx = stage.width / 2
     const cy = stage.height / 2
-    setView((v) => ({ z, tx: cx - (cx - v.tx) * (z / v.z), ty: cy - (cy - v.ty) * (z / v.z) }))
+    setView((v) => clamp({ z, tx: cx - (cx - v.tx) * (z / v.z), ty: cy - (cy - v.ty) * (z / v.z) }))
   }
 
   const local = (e: React.PointerEvent | React.WheelEvent | React.MouseEvent) => {
@@ -239,19 +254,36 @@ export function PhotoStage({
     const p = local(e)
     setCursor(p)
     if (sel) setSel({ ...sel, x1: p.x, y1: p.y })
-    else if (drag) setView((v) => ({ ...v, tx: drag.tx + (p.x - drag.x), ty: drag.ty + (p.y - drag.y) }))
+    else if (drag) setView((v) => clamp({ ...v, tx: drag.tx + (p.x - drag.x), ty: drag.ty + (p.y - drag.y) }))
   }
   const pointerUp = () => {
     if (sel) finishSelection()
     setDrag(null)
   }
-  const wheel = (e: React.WheelEvent) => {
-    e.preventDefault()
-    const p = local(e)
-    zoomAt(e.deltaY < 0 ? 1.2 : 1 / 1.2, p.x, p.y)
-  }
+  // Wheel zooms the picture and must not scroll the page. React's onWheel is passive
+  // (preventDefault is ignored), so listen natively with passive: false.
+  useEffect(() => {
+    const el = stageRef.current
+    if (!el) return
+    const on = (e: WheelEvent) => {
+      e.preventDefault()
+      e.stopPropagation()
+      const r = el.getBoundingClientRect()
+      // Zoom in proportion to the scroll: a mouse notch (~100 px) is about 1.2x, while a
+      // trackpad's stream of small deltas zooms smoothly instead of 1.2x per event.
+      // Lines/pages (deltaMode 1/2, e.g. Firefox mouse wheels) are converted to pixels.
+      const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? r.height : 1)
+      // Pinch on a trackpad arrives as ctrl+wheel with small deltas: make it a bit livelier.
+      const factor = Math.exp(-Math.max(-300, Math.min(300, px)) * (e.ctrlKey ? 0.01 : 0.0018))
+      zoomAt(factor, e.clientX - r.left, e.clientY - r.top)
+    }
+    el.addEventListener('wheel', on, { passive: false })
+    return () => el.removeEventListener('wheel', on)
+  }, [stageRef, zoomAt])
 
   const pixelated = scale >= 3
+  // Something to drag only once the picture is larger than the frame.
+  const pannable = iw * scale > stage.width + 0.5 || ih * scale > stage.height + 0.5
   const loupeSize = 180
   const loupeZoom = 3
 
@@ -259,7 +291,7 @@ export function PhotoStage({
     <div className="photo" id="photo-stage">
       <LensDefs />
       <div
-        className={`stage photo-canvas ${enhanceMode ? 'enhancing' : drag ? 'dragging' : ''}`}
+        className={`stage photo-canvas ${enhanceMode ? 'enhancing' : drag && pannable ? 'dragging' : pannable ? 'pannable' : ''}`}
         ref={stageRef}
         style={{ height }}
         onPointerDown={pointerDown}
@@ -269,7 +301,6 @@ export function PhotoStage({
           setCursor(null)
           setDrag(null)
         }}
-        onWheel={wheel}
         onDoubleClick={(e) => {
           const p = local(e)
           zoomAt(2, p.x, p.y)
