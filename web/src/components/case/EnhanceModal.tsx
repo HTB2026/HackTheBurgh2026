@@ -6,6 +6,8 @@ import { capture } from '../../lib/pointer'
 import { useMediaKind } from '../../lib/region'
 import { mockName } from '../../lib/mock'
 import { Icon, Modal } from '../ui/ui'
+import { useGpu } from '../../lib/gpu'
+import { GpuStack } from './GpuStack'
 
 export interface EnhanceBox {
   x: number
@@ -39,7 +41,9 @@ export function EnhanceModal({ caseId, box, onClose }: { caseId: string; box: En
   const [result, setResult] = useState<EnhanceResult | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [stepIdx, setStepIdx] = useState(0)
-  const [view, setView] = useState<'slider' | 'side' | 'lenses'>('slider')
+  const [view, setView] = useState<'slider' | 'side' | 'lenses' | 'gpu'>('slider')
+  const gpuState = useGpu()
+  const gpu = gpuState === 'loading' ? null : gpuState
   const [lens, setLens] = useState<Lens | null>(null)
   const steps = still ? STEPS_PHOTO : STEPS_VIDEO
 
@@ -85,6 +89,11 @@ export function EnhanceModal({ caseId, box, onClose }: { caseId: string; box: En
                   Forensic lenses <span className="n">{lenses.length}</span>
                 </button>
               )}
+              {!still && gpu && (
+                <button className={view === 'gpu' ? 'active' : ''} onClick={() => setView('gpu')} data-tip="Choose how many frames to combine and step frame by frame, computed live on your GPU">
+                  Stack on your GPU
+                </button>
+              )}
             </div>
           )}
         </header>
@@ -103,6 +112,8 @@ export function EnhanceModal({ caseId, box, onClose }: { caseId: string; box: En
             </div>
             <span className="muted">{steps[stepIdx]}</span>
           </div>
+        ) : view === 'gpu' && gpu ? (
+          <GpuStack gpu={gpu} region={{ x: box.x, y: box.y, w: box.w, h: box.h }} time={box.time_s} />
         ) : view === 'lenses' && lens ? (
           <div className="lenses">
             <div className="lens-pick">
