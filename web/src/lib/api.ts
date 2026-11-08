@@ -1,5 +1,5 @@
 import { authHeaders } from './auth'
-import type { CaseSummary, EnhanceResult, Health } from './types'
+import type { AiProvider, CaseSummary, EnhanceResult, Health } from './types'
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -27,8 +27,11 @@ export const api = {
     }).then((r) => json<CaseSummary>(r)),
   remove: async (id: string) =>
     fetch(`/api/cases/${id}`, { method: 'DELETE', headers: await authHeaders() }).then((r) => json<{ deleted: boolean }>(r)),
-  rerun: async (id: string) =>
-    fetch(`/api/cases/${id}/rerun`, { method: 'POST', headers: await authHeaders() }).then((r) => json<CaseSummary>(r)),
+  rerun: async (id: string, aiProvider?: AiProvider | null) =>
+    fetch(`/api/cases/${id}/rerun${aiProvider ? `?ai_provider=${aiProvider}` : ''}`, {
+      method: 'POST',
+      headers: await authHeaders(),
+    }).then((r) => json<CaseSummary>(r)),
   enhance: (id: string, body: { time_s?: number; x: number; y: number; w: number; h: number; frames?: number }) =>
     fetch(`/api/cases/${id}/enhance`, {
       method: 'POST',
@@ -42,12 +45,16 @@ export const api = {
 export async function uploadEvidence(
   file: File,
   approxTime: string | null,
+  aiProvider: AiProvider | null,
   onProgress: (fraction: number) => void,
 ): Promise<CaseSummary> {
   const headers = await authHeaders()
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
-    const q = approxTime ? `?approx_time=${encodeURIComponent(approxTime)}` : ''
+    const params = new URLSearchParams()
+    if (approxTime) params.set('approx_time', approxTime)
+    if (aiProvider) params.set('ai_provider', aiProvider)
+    const q = params.size ? `?${params}` : ''
     xhr.open('POST', `/api/cases${q}`)
     for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v)
     xhr.upload.onprogress = (e) => {

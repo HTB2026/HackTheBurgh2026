@@ -1,4 +1,4 @@
-"""What an analyst would notice in the frames (OpenAI vision, optional).
+"""What an analyst would notice in the frames (AI vision, optional).
 
 Keyframes go to a vision model with a strict JSON schema: setting, likely
 region and its visual evidence, time of day, notable observations, and any
@@ -10,7 +10,7 @@ import base64
 import cv2
 import numpy as np
 
-from earwitness import openai_client
+from earwitness import ai
 from earwitness.modules.base import CaseContext
 from earwitness.modules.base import Reporter
 from earwitness.modules.base import Skip
@@ -185,8 +185,10 @@ class Vision:
     depends = ["timeline"]
 
     async def run(self, ctx: CaseContext, out: Reporter) -> None:
-        if not openai_client.enabled():
-            raise Skip("set OPENAI_API_KEY to enable")
+        provider = ai.for_case(ctx.options)
+
+        if provider is None:
+            raise Skip(ai.MISSING_KEY)
 
         info = await ctx.video_info()
         still = ctx.kind == "image"
@@ -267,7 +269,7 @@ class Vision:
             )
 
         out.progress(0.3, "consulting vision model")
-        result = await openai_client.structured(
+        result = await provider.structured(
             ctx.workdir,
             instructions=_STILL_INSTRUCTIONS if still else _INSTRUCTIONS,
             content=content,

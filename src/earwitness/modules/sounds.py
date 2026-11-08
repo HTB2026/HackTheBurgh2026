@@ -9,7 +9,7 @@ AI-inferred and labelled so.
 
 import os
 
-from earwitness import openai_client
+from earwitness import ai
 from earwitness.modules.base import CaseContext
 from earwitness.modules.base import Reporter
 from earwitness.modules.base import Skip
@@ -36,11 +36,13 @@ _INSTRUCTIONS = (
 class Sounds:
     name = "sounds"
     title = "SOUND SLEUTH"
-    description = "An AI listener names background sounds, languages and accents as clues to place and time (OpenAI, optional)."
+    description = "An AI listener names background sounds, languages and accents as clues to place and time (AI, optional)."
 
     async def run(self, ctx: CaseContext, out: Reporter) -> None:
-        if not openai_client.enabled():
-            raise Skip("set OPENAI_API_KEY to enable")
+        provider = ai.for_case(ctx.options)
+
+        if provider is None:
+            raise Skip(ai.MISSING_KEY)
 
         probe = await ctx.probe()
 
@@ -57,7 +59,7 @@ class Sounds:
             raise Skip("could not extract audio")
 
         out.progress(0.3, "listening")
-        heard = await openai_client.listen(ctx.workdir, path, _INSTRUCTIONS)
+        heard = await provider.listen(ctx.workdir, path, _INSTRUCTIONS)
         sounds = [s for s in heard.get("sounds") or [] if isinstance(s, dict)]
         out.artifact(
             "heard",

@@ -1840,3 +1840,9 @@ td.lb-title > * {
 .case-head.v-synthetic .cover-tint { background: linear-gradient(180deg, rgb(163 51 200 / 0.35), var(--bg)); }
 .pill.v-synthetic { background: var(--purple); color: #fff; }
 .card.v-synthetic .card-img::after { background: var(--purple); }
+.verdict-block .failed-count {
+  color: var(--red-t);
+}
+.verdict-block .alert {
+  margin-top: 10px;
+}

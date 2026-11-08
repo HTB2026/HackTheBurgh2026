@@ -10,7 +10,9 @@ import { deriveFacts, type Facts } from '../../lib/facts'
 import { useHealth } from '../../lib/health'
 import { mediaNoun, modulePlain, VERDICT } from '../../lib/plain'
 import { mockName } from '../../lib/mock'
-import { Badge, Icon } from '../ui/ui'
+import { Alert, Badge, Icon } from '../ui/ui'
+import { AI_LABEL, AiPicker } from '../AiPicker'
+import type { AiProvider, Health } from '../../lib/types'
 import { Player } from './Player'
 import { PhotoStage, RegionList } from './PhotoStage'
 import { FindingsBoard } from './Findings'
@@ -36,7 +38,8 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   const pb = useMemo(() => new Playback(), [])
   const rf = useMemo(() => new RegionFocus(), [])
   const { health } = useHealth()
-  const facts = useMemo(() => deriveFacts(state, health?.openai ?? null), [state, health?.openai])
+  const aiOn = health ? (health.ai ? health.ai.providers.length > 0 : health.openai) : null
+  const facts = useMemo(() => deriveFacts(state, aiOn), [state, aiOn])
   const [open, setOpen] = useState<Set<SectionKey>>(new Set())
   const [focus, setFocus] = useState<string | null>(null)
   const info = state.info
@@ -115,8 +118,9 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
             state={state}
             facts={facts}
             caseId={caseId}
-            onRerun={async () => {
-              await api.rerun(caseId)
+            health={health}
+            onRerun={async (aiProvider) => {
+              await api.rerun(caseId, aiProvider)
               setNonce((n) => n + 1)
             }}
           />
@@ -288,8 +292,22 @@ function Seal({ facts }: { facts: Facts }) {
   )
 }
 
-function CaseHead({ state, facts, caseId, onRerun }: { state: CaseState; facts: Facts; caseId: string; onRerun: () => void }) {
+function CaseHead({
+  state,
+  facts,
+  caseId,
+  health,
+  onRerun,
+}: {
+  state: CaseState
+  facts: Facts
+  caseId: string
+  health: Health | null
+  onRerun: (aiProvider: AiProvider | null) => void
+}) {
   const info = state.info
+  const [aiProvider, setAiProvider] = useState<AiProvider | null>(null)
+  const chosen = aiProvider ?? info?.ai_provider ?? null
   const still = facts.kind === 'image'
   return (
     <section className={`case-head v-${facts.verdict}`}>
@@ -350,9 +368,18 @@ function CaseHead({ state, facts, caseId, onRerun }: { state: CaseState; facts: 
               </a>
             )}
             {!mockName() && (
-              <button className="icon-btn" onClick={onRerun} disabled={facts.running} data-tip="Run every check again" aria-label="Rerun">
-                <Icon name="rotate-right" />
-              </button>
+              <>
+                <AiPicker health={health} value={chosen} onChange={setAiProvider} compact />
+                <button
+                  className="icon-btn"
+                  onClick={() => onRerun(aiProvider)}
+                  disabled={facts.running}
+                  data-tip={aiProvider && aiProvider !== info?.ai_provider ? `Run every check again with ${AI_LABEL[aiProvider]}` : 'Run every check again'}
+                  aria-label="Rerun"
+                >
+                  <Icon name="rotate-right" />
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -384,13 +411,36 @@ function VerdictLine({ state, facts, conn }: { state: CaseState; facts: Facts; c
   const flaggedModules = new Set(state.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning').map((f) => f.module))
   const passed = state.moduleOrder.filter((n) => state.modules[n]?.status === 'done' && !flaggedModules.has(n)).length
   const unfinished = state.moduleOrder.filter((n) => !isTerminal(state.modules[n]?.status ?? 'queued')).length
+  const failed = state.moduleOrder.map((n) => state.modules[n]).filter((m) => m?.status === 'error')
+  // "RuntimeError: Gemini quota used up…" -> "Gemini quota used up…"; one line per distinct reason.
+  const reasons = [
+    ...new Set(
+      failed.map((m) => {
+        const r = (m.message || 'unknown error').replace(/^[A-Za-z]+(Error|Exception): /, '')
+        return r.length > 300 ? `${r.slice(0, 300)}…` : r
+      }),
+    ),
+  ]
   return (
     <section className="verdict-block">
       <p className={`verdict-line v-${facts.verdict}`}>{facts.summary ?? VERDICT[facts.verdict].line}</p>
       <p className="muted">
         {flagged} {flagged === 1 ? 'thing' : 'things'} worth checking · {passed} {passed === 1 ? 'check' : 'checks'} passed
+        {failed.length > 0 && <span className="failed-count"> · {failed.length} failed</span>}
         {unfinished && conn !== 'live' ? ` · ${unfinished} unfinished` : ''}
       </p>
+      {failed.length > 0 && (
+        <Alert
+          icon="triangle-exclamation"
+          tone="red"
+          title={`${failed.length === 1 ? 'This check' : 'These checks'} could not run: ${failed.map((m) => m.title).join(', ')}`}
+        >
+          {reasons.map((r) => (
+            <p key={r}>{r}</p>
+          ))}
+          <p className="faint">The verdict above is based only on the checks that ran.</p>
+        </Alert>
+      )}
     </section>
   )
 }

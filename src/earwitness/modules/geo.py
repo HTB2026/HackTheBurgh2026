@@ -18,7 +18,7 @@ GPS, the error in km is reported, which keeps the whole thing honest.
 
 Use only on footage you are entitled to analyse; never to locate people who
 have not agreed to be found. geo-sleuth is optional (EARWITNESS_GEOSLEUTH);
-OPENAI_API_KEY is required for the reasoning steps.
+An AI key (OPENAI_API_KEY or GEMINI_API_KEY) is required for the reasoning steps.
 """
 
 import asyncio
@@ -33,7 +33,7 @@ import cv2
 import httpx
 import numpy as np
 
-from earwitness import openai_client
+from earwitness import ai
 from earwitness.modules.base import CaseContext
 from earwitness.modules.base import Reporter
 from earwitness.modules.base import Skip
@@ -324,8 +324,10 @@ class Geo:
     depends = ["provenance", "transcript", "ocr", "vision", "sounds", "light"]
 
     async def run(self, ctx: CaseContext, out: Reporter) -> None:
-        if not openai_client.enabled():
-            raise Skip("set OPENAI_API_KEY to enable")
+        provider = ai.for_case(ctx.options)
+
+        if provider is None:
+            raise Skip(ai.MISSING_KEY)
 
         info = await ctx.video_info()
         still = ctx.kind == "image"
@@ -536,7 +538,7 @@ class Geo:
 
         # ---- propose ---------------------------------------------------------------
         out.progress(0.4, "proposing candidate places")
-        proposal = await openai_client.structured(
+        proposal = await provider.structured(
             ctx.workdir,
             instructions=_PROPOSE,
             content=[{"type": "input_text", "text": clue_text}, *evidence],
@@ -635,7 +637,7 @@ class Geo:
         out.progress(0.75, "verifying candidates against the real world")
 
         if has_references:
-            verdict = await openai_client.structured(
+            verdict = await provider.structured(
                 ctx.workdir, instructions=_VERIFY, content=verify_content,
                 schema=_VERIFY_SCHEMA, name="geolocation_verification", effort="high",
             )  # fmt: skip

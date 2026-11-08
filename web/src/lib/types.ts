@@ -43,6 +43,8 @@ export interface CaseInfo {
   media_url: string | null
   original_url?: string | null
   modules: ModuleInfo[]
+  /** AI provider this run used ('openai' | 'gemini'); null when AI was off. */
+  ai_provider?: AiProvider | null
   // newer backends; optional on older cases
   sha256?: string
   md5?: string
@@ -98,6 +100,8 @@ export interface CaseSummary {
   warnings: number
   verdict?: string | null
   summary_plain?: string | null
+  /** AI provider chosen for this case; null means the server default. */
+  ai_provider?: AiProvider | null
   case: CaseInfo | null
 }
 
@@ -165,9 +169,13 @@ export interface AuthConfig {
   audience: string
 }
 
+export type AiProvider = 'openai' | 'gemini'
+
 export interface Health {
   ok: boolean
   openai: boolean
+  /** AI providers with a key on this server, and the one used when a case does not choose. */
+  ai?: { providers: AiProvider[]; default: AiProvider | null }
   modules: ModuleInfo[]
   image_modules?: ModuleInfo[]
   /** Auth0 login settings; null when the server has no login configured. */

@@ -1,8 +1,9 @@
-"""What is said, and in what language (OpenAI speech-to-text, cross-checked).
+"""What is said, and in what language (AI speech-to-text, cross-checked).
 
 Speech models invent plausible sentences over noise, music and distant voices
 ("thanks for watching", a TV-news sign-off...). So two independent models
-transcribe the audio: whisper-1 (timed segments) and gpt-4o-transcribe. When
+transcribe the audio (OpenAI: whisper-1 for timed segments and gpt-4o-transcribe;
+Gemini: two different Gemini models). When
 they agree, the words are reported. When they disagree, the words are not
 trustworthy, but if both heard the same language (writing system), that
 language is still a real clue: voices speaking Chinese in the background say
@@ -14,7 +15,7 @@ import os
 import re
 import unicodedata
 
-from earwitness import openai_client
+from earwitness import ai
 from earwitness.modules.base import CaseContext
 from earwitness.modules.base import Reporter
 from earwitness.modules.base import Skip
@@ -127,11 +128,13 @@ def _agreement(a: str, b: str) -> float:
 class Transcript:
     name = "transcript"
     title = "TRANSCRIPT"
-    description = "Speech, cross-checked by two speech models; spoken language as a clue (OpenAI, optional)."
+    description = "Speech, cross-checked by two speech models; spoken language as a clue (AI, optional)."
 
     async def run(self, ctx: CaseContext, out: Reporter) -> None:
-        if not openai_client.enabled():
-            raise Skip("set OPENAI_API_KEY to enable")
+        provider = ai.for_case(ctx.options)
+
+        if provider is None:
+            raise Skip(ai.MISSING_KEY)
 
         probe = await ctx.probe()
 
@@ -149,13 +152,14 @@ class Transcript:
             raise Skip("could not extract audio")
 
         out.progress(0.3, "transcribing with two models")
-        whisper = await openai_client.transcribe(ctx.workdir, path, "whisper-1")
+        whisper = await provider.transcribe(ctx.workdir, path, "primary")
+        first_model = whisper.get("model") or "whisper-1"
+        second_model = "second model"
 
         try:
-            second = await openai_client.transcribe(
-                ctx.workdir, path, "gpt-4o-transcribe"
-            )
+            second = await provider.transcribe(ctx.workdir, path, "check")
             second_text = (second.get("text") or "").strip()
+            second_model = second.get("model") or "gpt-4o-transcribe"
         except Exception as error:  # noqa: BLE001 - one model is still useful
             out.log(f"second speech model unavailable: {error}")
             second_text = None
@@ -188,9 +192,9 @@ class Transcript:
             data={
                 "columns": ["model", "text", "writing system"],
                 "rows": [
-                    ["whisper-1", whisper_text or "(nothing)", script_a or "-"],
+                    [first_model, whisper_text or "(nothing)", script_a or "-"],
                     [
-                        "gpt-4o-transcribe",
+                        second_model,
                         second_text if second_text is not None else "(unavailable)",
                         script_b or "-",
                     ],

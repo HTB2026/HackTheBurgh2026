@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, uploadEvidence } from '../lib/api'
+import { AI_LABEL, aiChoices } from './AiPicker'
+import type { AiProvider } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
 import { ago, dateShort, mmss } from '../lib/format'
 import { useHealth } from '../lib/health'
@@ -117,6 +119,24 @@ export function Landing({ examine }: { examine?: boolean }) {
   const verdictFor = (c: CaseSummary): Verdict | undefined =>
     c.status !== 'done' ? 'running' : c.verdict !== undefined ? (c.verdict ? verdictOf(c.verdict) : 'unknown') : meta[c.id]?.verdict
   const [approx, setApprox] = useState('')
+  const [aiProvider, setAiProvider] = useState<AiProvider | null>(() => {
+    try {
+      return (localStorage.getItem('earwitness.ai') as AiProvider | null) ?? null
+    } catch {
+      return null
+    }
+  })
+  const choices = aiChoices(health)
+  // The stored choice only counts if this server still offers it.
+  const aiChosen = aiProvider && choices.includes(aiProvider) ? aiProvider : (health?.ai?.default ?? null)
+  const pickAi = (p: AiProvider) => {
+    setAiProvider(p)
+    try {
+      localStorage.setItem('earwitness.ai', p)
+    } catch {
+      /* private mode: the choice just isn't remembered */
+    }
+  }
   const [path, setPath] = useState('')
   const [over, setOver] = useState(false)
   const [upload, setUpload] = useState<{ name: string; p: number } | null>(null)
@@ -140,14 +160,14 @@ export function Landing({ examine }: { examine?: boolean }) {
       setErr(null)
       setUpload({ name: file.name, p: 0 })
       try {
-        const s = await uploadEvidence(file, toIso(approx), (p) => setUpload({ name: file.name, p }))
+        const s = await uploadEvidence(file, toIso(approx), aiChosen, (p) => setUpload({ name: file.name, p }))
         location.hash = `#/case/${s.id}`
       } catch (e) {
         setErr(String((e as Error).message ?? e))
         setUpload(null)
       }
     },
-    [approx],
+    [approx, aiChosen],
   )
 
   // the whole page accepts a dropped file
@@ -189,7 +209,7 @@ export function Landing({ examine }: { examine?: boolean }) {
     setBusy(true)
     try {
       const iso = toIso(approx)
-      const s = await api.fromPath(path.trim(), iso ? { approx_time: iso } : {})
+      const s = await api.fromPath(path.trim(), { ...(iso ? { approx_time: iso } : {}), ...(aiChosen ? { ai_provider: aiChosen } : {}) })
       location.hash = `#/case/${s.id}`
     } catch (e) {
       setErr(`Could not open ${path.trim()}: ${(e as Error).message}`)
@@ -283,6 +303,29 @@ export function Landing({ examine }: { examine?: boolean }) {
           <SectionTitle icon="file-video" accent="red" small="Video, audio or a photograph (JPEG, HEIC, PNG, WebP, TIFF). Checks start straight away.">
             Examine a video or photo
           </SectionTitle>
+          {choices.length > 1 && (
+            <div className="ai-choice" role="radiogroup" aria-label="AI model">
+              <span className="ai-choice-label">
+                <Icon name="robot" /> AI model
+              </span>
+              <div className="tabs ai-tabs">
+                {choices.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    role="radio"
+                    aria-checked={aiChosen === p}
+                    className={aiChosen === p ? 'active' : ''}
+                    disabled={!!upload}
+                    onClick={() => pickAi(p)}
+                  >
+                    {AI_LABEL[p] ?? p}
+                  </button>
+                ))}
+              </div>
+              <small className="faint">Runs speech, sounds, the visual analyst, geolocation and the written summary.</small>
+            </div>
+          )}
           <div
             ref={dropRef}
             className={`dropzone ${upload ? 'busy' : ''}`}
