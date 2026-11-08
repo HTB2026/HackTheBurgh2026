@@ -2,7 +2,7 @@
  * Shared WebGPU access. Everything GPU in the app is optional: when the browser has no
  * WebGPU (or no adapter), `useGpu()` returns null and callers render today's 2D views.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 export interface Gpu {
   device: GPUDevice
@@ -59,12 +59,22 @@ export const hasWebGpu = typeof navigator !== 'undefined' && 'gpu' in navigator
  * Returns the context and the current pixel size; re-render when `size` changes.
  */
 export function useGpuCanvas(gpu: Gpu | null | 'loading') {
-  const ref = useRef<HTMLCanvasElement | null>(null)
+  // A callback ref (that still exposes .current): the canvas is set up whenever the element
+  // appears, including when it mounts after the GPU device is already available.
+  const [el, setEl] = useState<HTMLCanvasElement | null>(null)
+  const ref = useMemo(() => {
+    const fn = ((node: HTMLCanvasElement | null) => {
+      fn.current = node
+      setEl(node)
+    }) as ((node: HTMLCanvasElement | null) => void) & { current: HTMLCanvasElement | null }
+    fn.current = null
+    return fn
+  }, [])
   const [ctx, setCtx] = useState<GPUCanvasContext | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0, dpr: 1 })
 
   useEffect(() => {
-    const canvas = ref.current
+    const canvas = el
     if (!canvas || !gpu || gpu === 'loading') return
     const context = canvas.getContext('webgpu')
     if (!context) return
@@ -87,7 +97,7 @@ export function useGpuCanvas(gpu: Gpu | null | 'loading') {
       context.unconfigure()
       setCtx(null)
     }
-  }, [gpu])
+  }, [gpu, el])
 
   return { ref, ctx, size }
 }

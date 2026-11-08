@@ -235,3 +235,21 @@ function boxBlur(src: Float32Array, w: number, h: number, rx: number, ry: number
     }
   return out
 }
+
+export interface FlickerVerdict {
+  grid: 50 | 60 | null // the grid whose flicker is clearly above the noise, if any
+  ratio: number // typical flicker / noise floor for that grid (or the best measurable one)
+  measurable: { 50: boolean; 60: boolean }
+}
+
+/** Is there lamp flicker, and from which grid? Typical pulse against the control frequency. */
+export function flickerVerdict(r: ScanResult): FlickerVerdict {
+  const med = (a: Float32Array) => {
+    const s = Float32Array.from(a).sort()
+    return s[Math.floor(s.length / 2)]
+  }
+  const noise = Math.max(0.005, med(r.flicker.control))
+  const ratios = { 50: r.flicker.amp50 ? med(r.flicker.amp50) / noise : 0, 60: r.flicker.amp60 ? med(r.flicker.amp60) / noise : 0 }
+  const best = ratios[50] >= ratios[60] ? 50 : 60
+  return { grid: ratios[best] > 5 ? best : null, ratio: ratios[best], measurable: { 50: !!r.flicker.amp50, 60: !!r.flicker.amp60 } }
+}

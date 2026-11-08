@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { drawTexture, useGpu, useGpuCanvas } from '../../lib/gpu'
 import { useCaseMedia } from '../../lib/media'
-import { scanFrames, type ScanResult } from '../../lib/frameScan'
+import { useGpuChecks } from '../../lib/gpuChecks'
 import { usePlayback, usePlayhead } from '../../lib/playback'
 import { mmss } from '../../lib/format'
 import { Icon } from '../ui/ui'
@@ -28,55 +28,35 @@ export function FrameScan({ thumbUrl }: { thumbUrl: string | null }) {
   const media = useCaseMedia()
   const pb = usePlayback()
   const playhead = usePlayhead()
-  const [rate, setRate] = useState(1)
-  const [progress, setProgress] = useState<number | null>(null)
-  const [result, setResult] = useState<ScanResult | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  // The scan is shared with the automatic browser checks (lib/gpuChecks.tsx): the result of the
+  // scan that ran when the case opened shows here, and "Scan again" updates it everywhere.
+  const checks = useGpuChecks()
+  const [rate, setRate] = useState(checks.frames.rate || 1)
+  const running = checks.frames.status === 'running'
+  const progress = running ? checks.frames.progress : null
+  const result = checks.frames.result
+  const error = checks.frames.error
   const [grid, setGrid] = useState<'50' | '60'>('50')
-  const changesTex = useRef<GPUTexture | null>(null)
-  const abort = useRef<AbortController | null>(null)
   const { ref: liveRef, ctx: liveCtx } = useGpuCanvas(gpu)
   const flickerRef = useRef<HTMLCanvasElement>(null)
 
-  useEffect(() => () => abort.current?.abort(), [])
+  useEffect(() => {
+    if (result) setGrid(result.flicker.amp50 ? '50' : '60')
+  }, [result])
 
   // Show the "what changed" map live while scanning.
   useEffect(() => {
-    if (progress == null || !gpu || !liveCtx) return
+    if (!running || !gpu || !liveCtx) return
     let raf = 0
     const tick = () => {
-      if (changesTex.current) drawTexture(gpu, liveCtx, changesTex.current)
+      if (checks.changes.current) drawTexture(gpu, liveCtx, checks.changes.current)
       raf = requestAnimationFrame(tick)
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [progress != null, gpu, liveCtx]) // eslint-disable-line react-hooks/exhaustive-deps
+  }, [running, gpu, liveCtx]) // eslint-disable-line react-hooks/exhaustive-deps
 
-  const run = async () => {
-    if (!gpu || !media.mediaUrl || !media.fps) return
-    abort.current?.abort()
-    const ac = new AbortController()
-    abort.current = ac
-    setError(null)
-    setResult(null)
-    setProgress(0)
-    try {
-      const r = await scanFrames(gpu, media.mediaUrl, media.originalUrl, media.fps, media.duration, {
-        rate,
-        signal: ac.signal,
-        onProgress: setProgress,
-        onChanges: (t) => (changesTex.current = t),
-      })
-      setResult(r)
-      setGrid(r.flicker.amp50 ? '50' : '60')
-    } catch (e) {
-      if ((e as Error).name !== 'AbortError') setError(String((e as Error).message ?? e))
-    } finally {
-      setProgress(null)
-      changesTex.current?.destroy()
-      changesTex.current = null
-    }
-  }
+  const run = () => checks.scan(rate)
 
   // Flicker map: amplitude at the chosen grid's aliased frequency, over a frame of the video.
   const amp = result ? (grid === '50' ? result.flicker.amp50 : result.flicker.amp60) : null
@@ -137,7 +117,7 @@ export function FrameScan({ thumbUrl }: { thumbUrl: string | null }) {
             <Icon name="play" /> {result ? 'Scan again' : 'Scan frames'}
           </button>
         ) : (
-          <button className="btn sm" onClick={() => abort.current?.abort()}>
+          <button className="btn sm" onClick={checks.stopScan}>
             Stop ({Math.round(progress * 100)}%)
           </button>
         )}

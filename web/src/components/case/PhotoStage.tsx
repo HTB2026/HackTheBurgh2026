@@ -11,6 +11,7 @@ import { EnhanceModal, type EnhanceBox } from './EnhanceModal'
 import { GHOST_QUALITIES, GpuLens, type GpuLensMode } from './GpuLens'
 import { findCopies, type CopyMatch } from '../../lib/copyFinder'
 import { useGpu } from '../../lib/gpu'
+import { useGpuChecks } from '../../lib/gpuChecks'
 
 interface View {
   z: number // zoom relative to "fit"
@@ -154,6 +155,9 @@ export function PhotoStage({
   const focused = useFocusedRegion()
   const lastFocus = useRef(0)
   const gpuState = useGpu()
+  const browserChecks = useGpuChecks()
+  const ghostRegions = browserChecks.ghost.result?.regions ?? []
+  const ghostQ = browserChecks.ghost.result?.dominant
   const gpu = gpuState === 'loading' ? null : gpuState
   const gpuLens = GPU_LENSES.find((l) => l.key === lens) ?? null
   const [elaQuality, setElaQuality] = useState(90)
@@ -384,6 +388,23 @@ export function PhotoStage({
           {overlay?.url && (
             <img className={`photo-overlay ${pixelated ? 'pixelated' : ''}`} src={overlay.url} alt="" draggable={false} style={{ opacity, mixBlendMode: blend }} />
           )}
+          {showBoxes &&
+            ghostRegions.map((r, i) => (
+              <button
+                key={`ghost${i}`}
+                className="photo-box ghost-box"
+                style={{ left: `${r.x * 100}%`, top: `${r.y * 100}%`, width: `${r.w * 100}%`, height: `${r.h * 100}%` }}
+                onPointerDown={(e) => e.stopPropagation()}
+                onClick={(e) => {
+                  e.stopPropagation()
+                  rf.focus({ x: r.x, y: r.y, w: r.w, h: r.h }, `Saved at about Q${r.quality} (browser)`)
+                }}
+                data-tip={`Found in your browser (JPEG ghost): this area was last saved at about Q${r.quality}, unlike the rest of the picture (Q${ghostQ})`}
+                aria-label={`Area saved at about Q${r.quality}`}
+              >
+                <span className="photo-box-tag ghost-tag">Q{r.quality} · browser</span>
+              </button>
+            ))}
           {showBoxes &&
             boxed.map(({ f, box }) => (
               <button

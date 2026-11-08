@@ -18,6 +18,8 @@ import type { AiProvider, Health } from '../../lib/types'
 import { Player } from './Player'
 import { PhotoStage, RegionList } from './PhotoStage'
 import { FrameScan } from './FrameScan'
+import { QuickLook } from './QuickLook'
+import { GpuChecksProvider } from '../../lib/gpuChecks'
 import { BrowserTranscript } from './BrowserTranscript'
 import { FindingsBoard } from './Findings'
 import { geoFinding, LocationHero } from './GeoBoard'
@@ -55,6 +57,13 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   const geo = geoFinding(state)
   const dossier = state.artifacts['brief:dossier'] ?? state.artifactOrder.map((id) => state.artifacts[id]).find((a) => a.kind === 'dossier') ?? null
   const [revealing, setRevealing] = useState(false)
+  // The picture the browser's checks read: the original when browsers can decode it.
+  const photoSrc =
+    info && info.kind === 'image'
+      ? info.original_url && /^(jpe?g|mpo|png|webp|gif|bmp)$/i.test(info.image?.format ?? '')
+        ? info.original_url
+        : (state.mediaUrl ?? null)
+      : null
   const media = useMemo(
     () => ({ mediaUrl: state.mediaUrl ?? null, originalUrl: info?.original_url ?? null, fps: info?.video?.fps ?? null, duration: info?.duration_s ?? 0 }),
     [state.mediaUrl, info?.original_url, info?.video?.fps, info?.duration_s],
@@ -109,6 +118,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   return (
     <PlaybackContext.Provider value={pb}>
       <CaseMediaContext.Provider value={media}>
+      <GpuChecksProvider kind={still ? 'image' : 'video'} hasAudio={!!info?.has_audio} photoSrc={photoSrc}>
       <RegionContext.Provider value={rf}>
         <MediaKindContext.Provider value={facts.kind}>
           <CaseHead
@@ -129,6 +139,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
             ) : (
               <>
                 {facts.running && <AnalysisLive state={state} facts={facts} />}
+                {facts.running && <QuickLook duration={info.duration_s} />}
                 <LocationHero state={state} facts={facts} points={points}>
                   {dossier && (
                     <button className="reveal-btn" onClick={() => setRevealing(true)}>
@@ -156,6 +167,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
                       )}
                     </div>
                     {still ? <RegionList findings={state.findings} onOpenFinding={openFinding} /> : <KeyMoments findings={state.findings} duration={info.duration_s} />}
+                    {!facts.running && <QuickLook duration={info.duration_s} open={false} />}
                     {!still && info.video && <FrameScan thumbUrl={info.thumb_url} />}
                     {!still && info.has_audio && <BrowserTranscript />}
                   </div>
@@ -246,6 +258,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
           )}
         </MediaKindContext.Provider>
       </RegionContext.Provider>
+      </GpuChecksProvider>
       </CaseMediaContext.Provider>
     </PlaybackContext.Provider>
   )
