@@ -33,7 +33,7 @@ ${RUN[@]+"${RUN[@]}"} rsync -az --delete \
   -e "ssh ${SSH_OPTS[*]}" \
   --exclude .venv --exclude web/node_modules --exclude web/dist --exclude web/dist-stable \
   --exclude cases --exclude __pycache__ --exclude .pytest_cache --exclude .ruff_cache \
-  --exclude .git --exclude .DS_Store \
+  --exclude .git --exclude .DS_Store --exclude .env --exclude ".env.bak-*" \
   "$ROOT/" "$TARGET:earwitness/"
 
 echo "==> Setting up the server (this takes a few minutes the first time)"
