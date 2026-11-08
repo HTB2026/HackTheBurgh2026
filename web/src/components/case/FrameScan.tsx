@@ -105,6 +105,8 @@ export function FrameScan({ thumbUrl }: { thumbUrl: string | null }) {
   }, [result, amp, ampStats])
 
   if (!gpu || !media.fps) return null
+  // Short clips: seconds with decimals (mm:ss would show every moment as 0:00).
+  const when = (t: number) => (dur < 60 ? `${t.toFixed(2)} s` : mmss(t))
   const dur = result ? Math.max(0.001, result.times[result.times.length - 1] ?? media.duration) : media.duration
   const W = 1000
   const H = 90
@@ -171,7 +173,7 @@ export function FrameScan({ thumbUrl }: { thumbUrl: string | null }) {
                 {result.jumps.slice(0, 6).map((k, i) => (
                   <button key={k} className="linkish" onClick={() => pb.seek(result.times[k])}>
                     {i ? ', ' : ''}
-                    {mmss(result.times[k])}
+                    {when(result.times[k])}
                   </button>
                 ))}
                 .{' '}

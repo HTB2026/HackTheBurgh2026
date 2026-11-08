@@ -101,29 +101,39 @@ export async function scanFrames(
   const fc = [0.4637, 0.37, 0.29, 0.21].map((k) => k * fps).find((f) => Math.abs(f - fa50) > 1.5 && Math.abs(f - fa60) > 1.5 && f > 1) ?? 0.4637 * fps
   const times: number[] = []
 
+  /** One compute step on the frame the video is showing now (at media time t). */
+  const processFrame = (t: number) => {
+    // The same frame can be reported twice (the first one, around play()): read it once.
+    if (times.length && Math.abs(t - times[times.length - 1]) < 1e-4) return
+    const k = times.length
+    if (k >= maxFrames) return
+    device.queue.copyExternalImageToTexture({ source: video }, { texture: frameTex }, [vw, vh])
+    const b = new ArrayBuffer(32)
+    new Uint32Array(b, 0, 4).set([w, h, k, k === 0 ? 1 : 0])
+    new Float32Array(b, 16, 4).set([t, fa50, fa60, fc])
+    device.queue.writeBuffer(uni, 0, b)
+    const enc = device.createCommandEncoder({ label: 'frame' })
+    const pass = enc.beginComputePass()
+    pass.setPipeline(pipeline)
+    pass.setBindGroup(0, bind)
+    pass.dispatchWorkgroups(Math.ceil(w / 16), Math.ceil(h / 16))
+    pass.end()
+    device.queue.submit([enc.finish()])
+    times.push(t)
+    opts.onProgress?.(Math.min(1, t / Math.max(0.001, duration)))
+  }
+
+  // The first frame is already on screen before playback starts, so no frame callback reports
+  // it: read it explicitly.
+  processFrame(video.currentTime)
+
   await new Promise<void>((resolve, reject) => {
     const onFrame = (_now: number, meta: VideoFrameCallbackMetadata) => {
       if (opts.signal?.aborted) {
         video.pause()
         return reject(new DOMException('cancelled', 'AbortError'))
       }
-      const k = times.length
-      if (k < maxFrames) {
-        device.queue.copyExternalImageToTexture({ source: video }, { texture: frameTex }, [vw, vh])
-        const b = new ArrayBuffer(32)
-        new Uint32Array(b, 0, 4).set([w, h, k, k === 0 ? 1 : 0])
-        new Float32Array(b, 16, 4).set([meta.mediaTime, fa50, fa60, fc])
-        device.queue.writeBuffer(uni, 0, b)
-        const enc = device.createCommandEncoder({ label: 'frame' })
-        const pass = enc.beginComputePass()
-        pass.setPipeline(pipeline)
-        pass.setBindGroup(0, bind)
-        pass.dispatchWorkgroups(Math.ceil(w / 16), Math.ceil(h / 16))
-        pass.end()
-        device.queue.submit([enc.finish()])
-        times.push(meta.mediaTime)
-        opts.onProgress?.(Math.min(1, meta.mediaTime / Math.max(0.001, duration)))
-      }
+      processFrame(meta.mediaTime)
       if (!video.ended) video.requestVideoFrameCallback(onFrame)
     }
     video.onended = () => resolve()
@@ -162,10 +172,14 @@ export async function scanFrames(
   const change = Array.from({ length: count }, (_, k) => (k === 0 ? 0 : s[k] / 16 / n))
   // A repeated frame decodes to exactly the same pixels: zero change (near-static scenes still differ).
   const duplicates = change.map((_c, k) => (k > 0 && s[k] === 0 ? k : -1)).filter((k) => k >= 0)
-  // Abrupt changes: far above the typical change around them.
+  // Abrupt changes: far above the typical change around them. Repeated frames (zero change) are
+  // left out of "typical", or a stretch of repeats would make every normal frame look abrupt.
   const jumps: number[] = []
   for (let k = 1; k < count; k++) {
-    const around = change.slice(Math.max(1, k - 15), Math.min(count, k + 16)).filter((_, j, arr) => arr[j] !== change[k]).sort((x, y) => x - y)
+    if (s[k] === 0) continue
+    const around: number[] = []
+    for (let j = Math.max(1, k - 15); j < Math.min(count, k + 16); j++) if (j !== k && s[j] !== 0) around.push(change[j])
+    around.sort((x, y) => x - y)
     const med = around.length ? around[Math.floor(around.length / 2)] : 0
     if (change[k] > Math.max(6, 5 * med)) jumps.push(k)
   }
