@@ -13,3 +13,6 @@ __pycache__/
 .DS_Store
 # third-party design references (not ours to redistribute)
 web/reference/
+*.tfvars
+.terraform/
+*.http
