@@ -1617,9 +1617,12 @@ td.lb-title > * {
   background: #000;
 }
 .photo-canvas {
-  cursor: grab;
   touch-action: none;
   user-select: none;
+  overscroll-behavior: contain;
+}
+.photo-canvas.pannable {
+  cursor: grab;
 }
 .photo-canvas.dragging {
   cursor: grabbing;
