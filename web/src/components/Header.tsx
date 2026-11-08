@@ -43,7 +43,6 @@ export function Header({ route }: { route: string }) {
             </span>
           ) : (
             health &&
-            route !== 'case' &&
             (() => {
               const providers = health.ai?.providers ?? (health.openai ? (['openai'] as const) : [])
               const on = providers.length > 0
@@ -63,7 +62,7 @@ export function Header({ route }: { route: string }) {
               )
             })()
           )}
-          {health && route !== 'case' && (
+          {health && (
             <span className="status-pill c-green" data-tip={`${health.modules.length} checks run on every video, ${health.image_modules?.length ?? 0} on every photo`}>
               <i className="status-dot on" /> {health.modules.length + (health.image_modules?.length ?? 0)} checks ready
             </span>

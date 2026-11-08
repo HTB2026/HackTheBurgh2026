@@ -1,10 +1,8 @@
 # Frontend fixtures
 
 Run Vite and open `/?mock=planted&extras`. No backend or external service is
-used. The preview bar exposes four examples, gallery navigation, technical
-details, replay and reset. The main view has one summary, up to three findings
-with inline evidence, and a compact facts row. Technical details start closed,
-including with `&extras`. The photo examples expose zoom, pan, regions,
+used. The preview bar exposes four examples, gallery navigation, all detail
+sections, replay and reset. The photo examples expose zoom, pan, regions,
 overlays, colour lenses, magnifier and region examination; the video example
 exposes playback, timed captions, filmstrip, waveform and chart seeking.
 

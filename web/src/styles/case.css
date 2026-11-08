@@ -1840,42 +1840,6 @@ td.lb-title > * {
 .case-head.v-synthetic .cover-tint { background: linear-gradient(180deg, rgb(163 51 200 / 0.35), var(--bg)); }
 .pill.v-synthetic { background: var(--purple); color: #fff; }
 .card.v-synthetic .card-img::after { background: var(--purple); }
-
-/* Compact case overview */
-.case-head .head-top { padding-top: 16px; padding-bottom: 16px; gap: 16px; }
-.case-head .name { font-size: 21px; color: inherit; }
-.case-page { max-width: 1400px; }
-.case-page .verdict-block { margin: 22px 0; }
-.case-page .verdict-line { max-width: none; font-size: 17px; display: flex; flex-wrap: wrap; gap: 10px; }
-.investigation { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(300px, 1fr); gap: 24px; align-items: start; }
-.investigation .video-col { width: 100%; min-width: 0; }
-.key-findings h2 { font-size: 18px; margin-bottom: 10px; }
-.key-finding { padding: 15px 0; border-top: 1px solid var(--border, #333); }
-.key-finding-title { display: flex; justify-content: space-between; align-items: start; gap: 8px; }
-.key-finding p { margin: 6px 0; color: var(--muted, #aaa); font-size: 14px; }
-.key-evidence { margin-top: 12px; }
-.key-evidence-item { padding: 8px 0; }
-.key-evidence-item details { margin-top: 8px; font-size: 13px; }
-.key-evidence-item summary { cursor: pointer; }
-.evidence-actions { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
-.key-evidence .exhibit { margin-top: 12px; }
-.fact-strip { display: flex; flex-wrap: wrap; gap: 20px 32px; padding: 20px 0; margin: 12px 0; border-bottom: 1px solid var(--border, #333); }
-.fact-strip div { flex: 1 1 190px; display: grid; gap: 4px; font-size: 14px; }
-.fact-strip b { font-size: 12px; text-transform: uppercase; color: #aaa; }
-.technical { margin: 18px 0 40px; }
-.technical-toggle { width: 100%; display: flex; justify-content: space-between; padding: 16px 0; background: none; color: inherit; border: 0; font-size: 18px; font-weight: 600; cursor: pointer; }
-.technical-tabs { margin: 0 0 18px; }
-@media (max-width: 850px) { .investigation { grid-template-columns: 1fr; } .case-head .head-top { flex-wrap: wrap; } }
-@media (max-width: 600px) {
-  .top .wrap { height: auto; min-height: 54px; flex-wrap: wrap; gap: 4px 12px; padding-top: 8px; padding-bottom: 8px; }
-  .top .nav { order: 3; width: 100%; height: auto; }
-  .top .nav a { padding: 8px; font-size: 13px; }
-  .top-right { min-width: 0; }
-  .case-page, .investigation, .key-findings, .technical-panel { min-width: 0; }
-  .investigation .stage, .investigation .photo-stage { height: min(65vw, 300px) !important; }
-  .investigation .controls { flex-wrap: wrap; }
-  .technical-panel { overflow-x: auto; }
-}
 .verdict-block .failed-count {
   color: var(--red-t);
 }

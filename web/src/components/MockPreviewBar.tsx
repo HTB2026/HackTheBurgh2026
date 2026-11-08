@@ -6,7 +6,7 @@ import '../styles/mock.css'
 const labels = { planted: 'Video · all signals', photo: 'Photo · edited', generated: 'Photo · AI-generated', clean: 'Video · no edits' }
 
 export function MockPreviewBar({ caseId }: { caseId: string | null }) {
-  const [expanded, setExpanded] = useState(false)
+  const [expanded, setExpanded] = useState(true)
   return (
     <aside className="mock-preview" aria-label="Frontend preview controls">
       <div className="wrap mock-preview-inner">
@@ -20,7 +20,7 @@ export function MockPreviewBar({ caseId }: { caseId: string | null }) {
           </label>
           <a className="btn ghost sm" href="#/">Case gallery</a>
           {caseId && <>
-            <button className="btn ghost sm" onClick={() => { const next = !expanded; setExpanded(next); window.dispatchEvent(new CustomEvent('mock-sections', { detail: next })) }}>{expanded ? 'Close technical details' : 'Open technical details'}</button>
+            <button className="btn ghost sm" onClick={() => { const next = !expanded; setExpanded(next); window.dispatchEvent(new CustomEvent('mock-sections', { detail: next })) }}>{expanded ? 'Collapse details' : 'Expand details'}</button>
             <button className="btn ghost sm" onClick={() => window.dispatchEvent(new Event('mock-replay'))}><Icon name="rotate-right" /> Replay analysis</button>
           </>}
           <button className="btn ghost sm" onClick={() => location.reload()} title="Restore deleted examples and clear uploaded files">Reset preview</button>

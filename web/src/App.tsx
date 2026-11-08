@@ -56,7 +56,7 @@ export function App() {
 
   return (
     <>
-      <Header route={route.page} />
+      <Header route={route.page === 'case' ? 'home' : route.page} />
       {mockName() && <MockPreviewBar caseId={caseId} />}
       {route.page === 'case' ? (
         <CasePage key={route.id} caseId={route.id} section={route.section} onSection={onSection} />
