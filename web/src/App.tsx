@@ -7,14 +7,14 @@ import { TipLayer } from './components/ui/ui'
 import { loadMock, mockName } from './lib/mock'
 import { MockPreviewBar } from './components/MockPreviewBar'
 
-type Route = { page: 'home' } | { page: 'examine' } | { page: 'how' } | { page: 'case'; id: string; section?: string }
+type Route = { page: 'home' } | { page: 'examine' } | { page: 'how'; section?: string } | { page: 'case'; id: string; section?: string }
 
 function parseHash(): Route {
   const h = location.hash
   const m = h.match(/^#\/case\/([^/?#]+)(?:\/([a-z]+))?/)
   if (m) return { page: 'case', id: decodeURIComponent(m[1]), section: m[2] }
   if (h.startsWith('#/examine')) return { page: 'examine' }
-  if (h.startsWith('#/how')) return { page: 'how' }
+  if (h.startsWith('#/how')) return { page: 'how', section: h.split('/')[2] }
   return { page: 'home' }
 }
 
@@ -28,7 +28,7 @@ export function App() {
   }, [])
 
   // scroll to the top on page changes (not on tab changes within a case)
-  const pageKey = route.page === 'case' ? `case:${route.id}` : route.page
+  const pageKey = route.page === 'case' ? `case:${route.id}` : route.page === 'how' ? `how:${route.section ?? ''}` : route.page
   useEffect(() => {
     window.scrollTo(0, 0)
     if (route.page !== 'case') document.title = 'EARWITNESS'
@@ -61,14 +61,14 @@ export function App() {
       {route.page === 'case' ? (
         <CasePage key={route.id} caseId={route.id} section={route.section} onSection={onSection} />
       ) : route.page === 'how' ? (
-        <HowItWorks />
+        <HowItWorks section={route.section} />
       ) : (
         <Landing examine={route.page === 'examine'} />
       )}
       <footer className="foot">
         <div className="wrap">
-          <span>EARWITNESS · video and photo forensics</span>
-          <span className="faint">Findings are leads, not proof. Labels marked AI come from a model and can be wrong.</span>
+          <span className="foot-wordmark">EARWITNESS</span>
+          <a className="foot-link" href="#/how/limits">Methods &amp; limitations <span aria-hidden="true">↗</span></a>
         </div>
       </footer>
       <TipLayer />

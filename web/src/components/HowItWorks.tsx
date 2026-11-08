@@ -1,9 +1,15 @@
+import { useEffect } from 'react'
 import { useHealth } from '../lib/health'
 import { modulePlain, VERDICT } from '../lib/plain'
 import { Alert, Icon, Redacted, SectionTitle } from './ui/ui'
 
-export function HowItWorks() {
+export function HowItWorks({ section }: { section?: string }) {
   const { health } = useHealth()
+  useEffect(() => {
+    if (section !== 'limits') return
+    const frame = requestAnimationFrame(() => document.getElementById('limits')?.scrollIntoView({ block: 'start' }))
+    return () => cancelAnimationFrame(frame)
+  }, [section, health])
   return (
     <>
       <section className="banner">

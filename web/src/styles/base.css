@@ -176,16 +176,24 @@ select {
 .foot {
   margin-top: 56px;
   border-top: 1px solid var(--line);
-  background: var(--header);
-  font-size: 12.5px;
+  font-size: 12px;
   color: var(--muted);
 }
 .foot .wrap {
   display: flex;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding-top: 16px;
-  padding-bottom: 16px;
+  padding-top: 20px;
+  padding-bottom: 20px;
+}
+.foot-wordmark { font-size: 11px; font-weight: 600; letter-spacing: 0.12em; }
+.foot-link { display: inline-flex; align-items: center; gap: 10px; }
+.foot-link:hover { color: var(--text); }
+.foot-link span { color: var(--faint); }
+.how #limits { scroll-margin-top: 80px; }
+@media (max-width: 360px) {
+  .foot .wrap { flex-direction: column; align-items: flex-start; gap: 12px; }
 }
 
 /* ---------- buttons, inputs ---------- */
