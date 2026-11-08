@@ -55,8 +55,8 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
             <Icon name="calendar" /> {ago(c.created)}
           </span>
           {c.owner && (
-            <span className="card-owner" data-tip={`Uploaded by ${ownerName(c.owner)}`}>
-              {c.owner.picture ? <img src={c.owner.picture} alt="" referrerPolicy="no-referrer" /> : <Icon name="user" />} {c.owner.name ?? 'signed-in user'}
+            <span className="card-owner" data-tip={`Uploaded by ${ownerName(c.owner)}`} aria-label={`Uploaded by ${ownerName(c.owner)}`}>
+              {c.owner.picture ? <img src={c.owner.picture} alt="" referrerPolicy="no-referrer" /> : <Icon name="circle-user" />}
             </span>
           )}
           <span className="grow" />
