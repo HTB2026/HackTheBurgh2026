@@ -2,11 +2,17 @@ import type { AiProvider, Health } from '../lib/types'
 
 export const AI_LABEL: Record<AiProvider, string> = { openai: 'OpenAI', gemini: 'Gemini', ollama: 'Gemma' }
 
+/** Providers still being tried out: labelled "experimental" wherever they can be chosen. */
+export const AI_EXPERIMENTAL: ReadonlySet<AiProvider> = new Set<AiProvider>(['ollama'])
+
+/** The label with "(experimental)" where it applies, for plain-text places (dropdowns, tooltips). */
+export const aiName = (p: AiProvider) => `${AI_LABEL[p] ?? p}${AI_EXPERIMENTAL.has(p) ? ' (experimental)' : ''}`
+
 /** One-line hint per provider, shown on hover. */
 export const AI_HINT: Record<AiProvider, string> = {
   openai: 'OpenAI (cloud): two speech models cross-check the transcript.',
   gemini: 'Google Gemini (cloud): two Gemini models cross-check the transcript. The free tier allows only a few cases a day.',
-  ollama: 'Gemma 4 on your own server (Ollama): nothing leaves your infrastructure. Slower, and the transcript has a single reading.',
+  ollama: 'Experimental: Gemma 4 on your own server (Ollama). Nothing leaves your infrastructure, but it is slower and less reliable than OpenAI or Gemini, and the transcript has a single reading.',
 }
 
 /** The AI providers a case can pick on this server (only worth showing when there are two or more). */
@@ -37,7 +43,7 @@ export function AiPicker({
     >
       {choices.map((p) => (
         <option key={p} value={p} title={AI_HINT[p]}>
-          {AI_LABEL[p] ?? p}
+          {aiName(p)}
         </option>
       ))}
     </select>

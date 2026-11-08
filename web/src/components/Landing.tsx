@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, uploadEvidence } from '../lib/api'
 import { useHealth } from '../lib/health'
 import { canChange, ownerName, useAuth } from '../lib/auth'
-import { AI_HINT, AI_LABEL, aiChoices } from './AiPicker'
+import { AI_EXPERIMENTAL, AI_HINT, AI_LABEL, aiChoices } from './AiPicker'
 import type { AiProvider } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
 import { ago, dateShort, mmss } from '../lib/format'
@@ -224,6 +224,7 @@ export function Landing({ examine }: { examine?: boolean }) {
                     onClick={() => pickAi(p)}
                   >
                     {AI_LABEL[p] ?? p}
+                    {AI_EXPERIMENTAL.has(p) && <span className="exp-tag">experimental</span>}
                   </button>
                 ))}
               </div>

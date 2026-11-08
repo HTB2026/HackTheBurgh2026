@@ -199,8 +199,25 @@
   border: 1px solid var(--line);
 }
 .ai-tabs button {
+  flex: 0 0 auto;
   min-width: 84px;
+  padding-inline: 16px;
 }
 .ai-tabs button:disabled {
   cursor: default;
+}
+
+/* "experimental" tag on an AI model choice (e.g. self-hosted Gemma) */
+.exp-tag {
+  margin-left: 6px;
+  padding: 0 4px;
+  border: 1px solid #d9a21b;
+  border-radius: 3px;
+  color: #f0b72f;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  line-height: 14px;
+  text-transform: uppercase;
+  vertical-align: 1px;
 }
