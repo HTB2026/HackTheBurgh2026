@@ -65,14 +65,16 @@ export function AnalysisLive({ state, facts }: { state: CaseState; facts: Facts 
 
   return (
     <section className="live" aria-live="polite">
-      <div className="live-top mono">
-        <span className="live-rec">
+      <div className="live-top">
+        <span className="status-pill c-red">
           <i className="pulse-dot" /> Analysing
         </span>
-        <span>{clock(elapsed)} elapsed</span>
+        <span className="status-pill c-grey">
+          <Icon name="stopwatch" /> {clock(elapsed)}
+        </span>
         {!opening && (
-          <span>
-            {facts.checksDone} of {facts.checksTotal} checks
+          <span className="status-pill c-blue">
+            <Icon name="list-check" /> {facts.checksDone} of {facts.checksTotal} checks
           </span>
         )}
       </div>
@@ -113,7 +115,7 @@ export function AnalysisLive({ state, facts }: { state: CaseState; facts: Facts 
               <li key={m.name} className={m.status} data-tip={m.status === 'waiting' && m.message ? m.message : p.does}>
                 <Icon name={p.icon} className="live-step-icon" />
                 <span className="live-step-name">{p.name}</span>
-                <span className="live-step-state mono">
+                <span className="live-step-state">
                   <Icon name={st.icon} className={m.status === 'running' ? 'fa-spin' : ''} /> {st.label}
                 </span>
               </li>

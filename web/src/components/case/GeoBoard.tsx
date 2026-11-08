@@ -215,7 +215,9 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
   if (!f && !gps && !searching && !points.length)
     return (
       <section className="loc-hero none" id="d-geo">
-        <p className="loc-kicker">Where it was {filmed}</p>
+        <p className="loc-kicker">
+          <Icon name="location-dot" /> Where it was {filmed}
+        </p>
         <p className="muted">
           {geoModule ? `Nothing in this ${noun} narrowed down where it was ${filmed}.` : `The location search did not run for this ${noun}: it needs an AI model on the server.`}
         </p>
@@ -230,7 +232,7 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
   return (
     <section className={`loc-hero ${tone}`} id="d-geo">
       <p className="loc-kicker">
-        <Icon name="location-crosshairs" /> Where this {noun} was {filmed}
+        <Icon name="location-dot" /> Where this {noun} was {filmed}
       </p>
       <div className="loc-head">
         <div className="loc-title">
