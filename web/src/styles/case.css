@@ -1977,6 +1977,279 @@ td.lb-title > * {
 }
 .badge-link { color: inherit; text-decoration: none; }
 
+/* JPEG ghost legend and copy finder (WebGPU photo tools) */
+.ghost-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 34px;
+  z-index: 4;
+  width: 270px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.72);
+  font-size: 11.5px;
+  color: #ddd;
+}
+.ghost-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.ghost-bar span {
+  flex: 1;
+}
+.ghost-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 10px;
+  color: #aaa;
+}
+.ghost-note {
+  margin-top: 4px;
+  line-height: 1.35;
+}
+.copy-box {
+  position: absolute;
+  border: 2px solid #ff4fd8;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.6), 0 0 12px rgb(255 79 216 / 0.6);
+  pointer-events: none;
+}
+.copy-box.source {
+  border: 2px dashed #38d6ff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.6);
+}
+.copy-tag {
+  position: absolute;
+  top: -18px;
+  left: -2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #ff4fd8;
+  color: #000;
+  font: 600 10.5px/16px 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+.copy-box.source .copy-tag {
+  background: #38d6ff;
+}
+.copy-status {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(640px, 90%);
+  padding: 6px 8px 6px 12px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.78);
+  border: 1px solid #ff4fd8;
+  font-size: 12px;
+  color: #eee;
+}
+.copy-status.err {
+  border-color: var(--red);
+}
+
+/* Live GPU spectrogram */
+.live-spec-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 2px 150px 6px 0;
+}
+.live-spec-plot {
+  position: relative;
+  width: 100%;
+}
+.live-spec-plot svg {
+  position: absolute;
+  inset: 0;
+}
+.live-spec-canvas {
+  position: absolute;
+  display: block;
+}
+.peak-trace {
+  fill: none;
+  stroke: #38d6ff;
+  stroke-width: 1.4;
+  opacity: 0.9;
+  pointer-events: none;
+}
+.live-spec-note {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  font-size: 11px;
+  pointer-events: none;
+}
+
+/* Frame scan (WebGPU) */
+.frame-scan {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--panel);
+}
+.frame-scan-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+}
+.frame-scan-head .grow {
+  flex: 1;
+}
+.frame-scan-live {
+  display: flex;
+  align-items: flex-end;
+  gap: 10px;
+  margin-top: 10px;
+}
+.frame-scan-changes {
+  width: 320px;
+  max-width: 60%;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 4px;
+}
+.frame-scan-curve {
+  display: block;
+  width: 100%;
+  height: 90px;
+  margin-top: 10px;
+  background: #0e0e0e;
+  border-radius: 4px;
+  cursor: pointer;
+}
+.frame-scan-curve .curve {
+  fill: none;
+  stroke: #38d6ff;
+  stroke-width: 1.2;
+}
+.frame-scan-curve .jump {
+  stroke: #ff4040;
+  stroke-width: 2;
+}
+.frame-scan-curve .dup {
+  stroke: #ffa630;
+  stroke-width: 2;
+}
+.frame-scan-curve .ph {
+  stroke: #fff;
+  stroke-width: 1;
+  opacity: 0.6;
+}
+.frame-scan-summary {
+  margin-top: 6px;
+}
+.c-red-t {
+  color: #ff6b6b;
+}
+.c-orange-t {
+  color: #ffa630;
+}
+.linkish {
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--link);
+  cursor: pointer;
+  font: inherit;
+}
+.frame-scan-flicker {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) 1fr;
+  gap: 12px;
+  margin-top: 10px;
+}
+.frame-scan-flicker-img {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  background: #000;
+  border-radius: 4px;
+  overflow: hidden;
+}
+.frame-scan-flicker-img img,
+.frame-scan-flicker-img canvas {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+.frame-scan-flicker-img img {
+  filter: grayscale(1) brightness(0.55);
+}
+.frame-scan-flicker .tabs {
+  display: inline-flex;
+  margin-bottom: 6px;
+  border: 1px solid var(--line);
+}
+@media (max-width: 700px) {
+  .frame-scan-flicker {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Multi-frame stack on the GPU (in the Examine-a-detail dialog) */
+.gpu-stack-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.gpu-stack-pair {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+.gpu-stack-pair figure {
+  margin: 0;
+}
+.gpu-stack-pair canvas {
+  display: block;
+  width: 100%;
+  background: #000;
+  border-radius: 4px;
+  image-rendering: auto;
+}
+.gpu-stack-pair figcaption {
+  margin-top: 4px;
+  font-size: 12px;
+}
+
+/* Transcript on the viewer's device (Whisper, WebGPU) */
+.browser-ai .exp-tag {
+  margin-left: 0;
+  padding: 0 4px;
+  border: 1px solid #d9a21b;
+  border-radius: 3px;
+  color: #f0b72f;
+  font-size: 9.5px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.browser-ai-chunks {
+  margin: 8px 0 0;
+  padding-left: 0;
+  list-style: none;
+  max-height: 260px;
+  overflow: auto;
+}
+.browser-ai-chunks li {
+  padding: 2px 0;
+}
+
 /* ---------- live analysis panel (while a case runs) ---------- */
 .live {
   margin-top: 28px;
@@ -2125,3 +2398,12 @@ td.lb-title > * {
 .live-more:hover { color: var(--text); }
 .live-more i { font-size: 11px; }
 .live-more[aria-expanded='true'] { margin-bottom: 12px; }
+
+
+/* Browser frame scan as an exhibit body */
+.frame-scan.embedded {
+  margin: 0;
+  padding: 0;
+  border: 0;
+  background: none;
+}

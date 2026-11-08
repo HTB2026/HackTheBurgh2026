@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react'
 import { textureFromUrl, uniformBuffer, useFrameRequest, useGpuCanvas, type Gpu } from '../../lib/gpu'
 import { LENS_COMPUTE, LENS_DRAW } from '../../lib/shaders/lens.wgsl'
+import { runGhost } from '../../lib/ghost'
 
-export type GpuLensMode = 'ela' | 'noise' | 'contrast' | 'sobel'
+export type GpuLensMode = 'ela' | 'noise' | 'contrast' | 'sobel' | 'ghost'
 
-const MODE_ID: Record<GpuLensMode, number> = { ela: 0, noise: 1, contrast: 2, sobel: 3 }
+const MODE_ID: Record<GpuLensMode, number> = { ela: 0, noise: 1, contrast: 2, sobel: 3, ghost: 4 }
+
+export { GHOST_QUALITIES } from '../../lib/ghost'
 
 interface Pipelines {
   ela: GPUComputePipeline
@@ -58,6 +61,7 @@ export function GpuLens({
   ih,
   pixelated,
   onState,
+  onGhost,
 }: {
   gpu: Gpu
   src: string
@@ -69,6 +73,8 @@ export function GpuLens({
   ih: number
   pixelated: boolean
   onState?: (s: { loading: boolean; error: string | null }) => void
+  /** JPEG ghost only: blocks per estimated quality (GHOST_QUALITIES order, then "none"). */
+  onGhost?: (counts: number[]) => void
 }) {
   const { ref, ctx, size } = useGpuCanvas(gpu)
   const [source, setSource] = useState<GPUTexture | null>(null)
@@ -76,6 +82,8 @@ export function GpuLens({
   const [resultVersion, setResultVersion] = useState(0)
   const stateCb = useRef(onState)
   stateCb.current = onState
+  const ghostCb = useRef(onGhost)
+  ghostCb.current = onGhost
 
   // Upload the picture once per source URL.
   useEffect(() => {
@@ -112,22 +120,28 @@ export function GpuLens({
     })
     device.queue.writeBuffer(P.params, 0, new Uint32Array([MODE_ID[mode]]))
     device.queue.writeBuffer(P.params, 4, new Float32Array([quality, gain, 0]))
-    const pipeline = mode === 'ela' ? P.ela : P.filters
-    const group = device.createBindGroup({
-      layout: pipeline.getBindGroupLayout(0),
-      entries: [
-        { binding: 0, resource: source.createView() },
-        { binding: 1, resource: texture.createView() },
-        { binding: 2, resource: { buffer: P.params } },
-      ],
-    })
-    const enc = device.createCommandEncoder({ label: 'lens compute' })
-    const pass = enc.beginComputePass()
-    pass.setPipeline(pipeline)
-    pass.setBindGroup(0, group)
-    pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    pass.end()
-    device.queue.submit([enc.finish()])
+    if (mode === 'ghost') {
+      // Shared with the automatic browser checks (lib/ghost.ts): estimate and paint in one go.
+      runGhost(gpu, source, texture)
+        .then((r) => ghostCb.current?.(r.counts))
+        .catch(() => {})
+    } else {
+      const pipeline = mode === 'ela' ? P.ela : P.filters
+      const enc = device.createCommandEncoder({ label: 'lens compute' })
+      const pass = enc.beginComputePass()
+      pass.setPipeline(pipeline)
+      pass.setBindGroup(0, device.createBindGroup({
+        layout: pipeline.getBindGroupLayout(0),
+        entries: [
+          { binding: 0, resource: source.createView() },
+          { binding: 1, resource: texture.createView() },
+          { binding: 2, resource: { buffer: P.params } },
+        ],
+      }))
+      pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
+      pass.end()
+      device.queue.submit([enc.finish()])
+    }
 
     const bind = device.createBindGroup({
       layout: P.draw.getBindGroupLayout(0),

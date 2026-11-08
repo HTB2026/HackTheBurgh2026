@@ -2,7 +2,7 @@
  * Shared WebGPU access. Everything GPU in the app is optional: when the browser has no
  * WebGPU (or no adapter), `useGpu()` returns null and callers render today's 2D views.
  */
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 export interface Gpu {
   device: GPUDevice
@@ -59,12 +59,22 @@ export const hasWebGpu = typeof navigator !== 'undefined' && 'gpu' in navigator
  * Returns the context and the current pixel size; re-render when `size` changes.
  */
 export function useGpuCanvas(gpu: Gpu | null | 'loading') {
-  const ref = useRef<HTMLCanvasElement | null>(null)
+  // A callback ref (that still exposes .current): the canvas is set up whenever the element
+  // appears, including when it mounts after the GPU device is already available.
+  const [el, setEl] = useState<HTMLCanvasElement | null>(null)
+  const ref = useMemo(() => {
+    const fn = ((node: HTMLCanvasElement | null) => {
+      fn.current = node
+      setEl(node)
+    }) as ((node: HTMLCanvasElement | null) => void) & { current: HTMLCanvasElement | null }
+    fn.current = null
+    return fn
+  }, [])
   const [ctx, setCtx] = useState<GPUCanvasContext | null>(null)
   const [size, setSize] = useState({ width: 0, height: 0, dpr: 1 })
 
   useEffect(() => {
-    const canvas = ref.current
+    const canvas = el
     if (!canvas || !gpu || gpu === 'loading') return
     const context = canvas.getContext('webgpu')
     if (!context) return
@@ -87,7 +97,7 @@ export function useGpuCanvas(gpu: Gpu | null | 'loading') {
       context.unconfigure()
       setCtx(null)
     }
-  }, [gpu])
+  }, [gpu, el])
 
   return { ref, ctx, size }
 }
@@ -194,4 +204,70 @@ export function textureWithMips(device: GPUDevice, source: ImageBitmap | HTMLCan
   }
   device.queue.submit([enc.finish()])
   return texture
+}
+
+const BLIT = /* wgsl */ `
+@group(0) @binding(0) var img: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+struct O { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> O {
+  let xy = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  var o: O;
+  o.pos = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
+  o.uv = vec2f(xy.x, 1.0 - xy.y);
+  return o;
+}
+@fragment fn fs(o: O) -> @location(0) vec4f { return textureSampleLevel(img, samp, o.uv, 0.0); }
+`
+const blits = new WeakMap<GPUDevice, { pipeline: GPURenderPipeline; sampler: GPUSampler }>()
+
+/** Draw a texture stretched over a whole canvas. */
+export function drawTexture(gpu: Gpu, ctx: GPUCanvasContext, texture: GPUTexture) {
+  let b = blits.get(gpu.device)
+  if (!b) {
+    const module = gpu.device.createShaderModule({ code: BLIT, label: 'blit' })
+    b = {
+      pipeline: gpu.device.createRenderPipeline({
+        layout: 'auto',
+        vertex: { module, entryPoint: 'vs' },
+        fragment: { module, entryPoint: 'fs', targets: [{ format: gpu.format }] },
+      }),
+      sampler: gpu.device.createSampler({ magFilter: 'linear', minFilter: 'linear' }),
+    }
+    blits.set(gpu.device, b)
+  }
+  const enc = gpu.device.createCommandEncoder({ label: 'blit' })
+  const pass = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+  pass.setPipeline(b.pipeline)
+  pass.setBindGroup(0, gpu.device.createBindGroup({ layout: b.pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: texture.createView() }, { binding: 1, resource: b.sampler }] }))
+  pass.draw(3)
+  pass.end()
+  gpu.device.queue.submit([enc.finish()])
+}
+
+// Firefox's WebGPU can't copy from a <video> (only ImageBitmap, image, canvas, OffscreenCanvas):
+// once that fails, draw each frame to a canvas first. drawImage is synchronous, so the canvas
+// holds exactly the frame the video is showing at the call.
+let videoCopyWorks = true
+const videoCanvases = new WeakMap<HTMLVideoElement, OffscreenCanvas>()
+
+/** Copy the frame a <video> is showing now into a texture of the video's size. */
+export function copyVideoFrame(device: GPUDevice, video: HTMLVideoElement, texture: GPUTexture) {
+  const size: [number, number] = [video.videoWidth, video.videoHeight]
+  if (videoCopyWorks) {
+    try {
+      device.queue.copyExternalImageToTexture({ source: video }, { texture }, size)
+      return
+    } catch (e) {
+      if (!(e instanceof TypeError)) throw e
+      videoCopyWorks = false
+    }
+  }
+  let canvas = videoCanvases.get(video)
+  if (!canvas || canvas.width !== size[0] || canvas.height !== size[1]) {
+    canvas = new OffscreenCanvas(size[0], size[1])
+    videoCanvases.set(video, canvas)
+  }
+  canvas.getContext('2d')!.drawImage(video, 0, 0)
+  device.queue.copyExternalImageToTexture({ source: canvas }, { texture }, size)
 }

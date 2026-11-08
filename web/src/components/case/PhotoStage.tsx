@@ -8,7 +8,8 @@ import { SEVERITY } from '../../lib/plain'
 import { rankFindings } from '../../lib/facts'
 import { Icon, SevChip } from '../ui/ui'
 import { EnhanceModal, type EnhanceBox } from './EnhanceModal'
-import { GpuLens, type GpuLensMode } from './GpuLens'
+import { GHOST_QUALITIES, GpuLens, type GpuLensMode } from './GpuLens'
+import { findCopies, type CopyMatch } from '../../lib/copyFinder'
 import { useGpu } from '../../lib/gpu'
 
 interface View {
@@ -24,6 +25,7 @@ const GPU_LENSES: { key: LensKey; mode: GpuLensMode; label: string; tip: string;
   { key: 'gpu-ela', mode: 'ela', label: 'Error level (ELA)', tip: 'Re-saves the picture as JPEG and shows how much each pixel changes. Areas pasted from a picture saved at a different quality glow differently from the rest.', gain: [5, 60, 20] },
   { key: 'gpu-noise', mode: 'noise', label: 'Noise residual', tip: 'The fine grain left after removing the picture itself. Pasted, cloned or smoothed areas have a different grain from the rest.', gain: [2, 40, 10] },
   { key: 'gpu-contrast', mode: 'contrast', label: 'Local contrast', tip: 'How much detail each small area holds. Retouched or blurred areas go dark.', gain: [1, 16, 4] },
+  { key: 'gpu-ghost', mode: 'ghost', label: 'JPEG ghost', tip: 'For every 8×8 block, the JPEG quality it was last saved at, as a colour. A pasted area saved at a different quality shows as a patch of another colour. Grey: plain areas with no clear answer.', gain: [1, 1, 1] },
   { key: 'gpu-sobel', mode: 'sobel', label: 'Edges', tip: 'Edge strength at full resolution: halos and double edges around pasted objects.', gain: [1, 16, 3] },
 ]
 
@@ -144,6 +146,9 @@ export function PhotoStage({
   const [enhanceMode, setEnhanceMode] = useState(false)
   const [sel, setSel] = useState<{ x0: number; y0: number; x1: number; y1: number } | null>(null)
   const [request, setRequest] = useState<EnhanceBox | null>(null)
+  const [ghostCounts, setGhostCounts] = useState<number[] | null>(null)
+  const [copyMode, setCopyMode] = useState(false)
+  const [copies, setCopies] = useState<{ source: Box; matches: CopyMatch[]; best: number; busy: boolean; error: string | null } | null>(null)
   const [hover, setHover] = useState<string | null>(null)
   const rf = useRegionFocus()
   const focused = useFocusedRegion()
@@ -235,9 +240,15 @@ export function PhotoStage({
       else if (e.key === '1') oneToOne()
       else if (e.key === 'b' || e.key === 'B') setShowBoxes((b) => !b)
       else if (e.key === 'm' || e.key === 'M') setLoupe((l) => !l)
-      else if (e.key === 'z' || e.key === 'Z') setEnhanceMode((m) => !m)
-      else if (e.key === 'Escape') {
+      else if (e.key === 'z' || e.key === 'Z') {
+        setCopyMode(false)
+        setEnhanceMode((m) => !m)
+      } else if ((e.key === 'c' || e.key === 'C') && gpu) {
         setEnhanceMode(false)
+        setCopyMode((m) => !m)
+      } else if (e.key === 'Escape') {
+        setEnhanceMode(false)
+        setCopyMode(false)
         setSel(null)
       }
     }
@@ -262,13 +273,26 @@ export function PhotoStage({
     setSel(null)
     setEnhanceMode(false)
     if (x1 - x0 < 0.002 || y1 - y0 < 0.002) return
+    if (copyMode) {
+      setCopyMode(false)
+      runCopySearch({ x: x0, y: y0, w: x1 - x0, h: y1 - y0 })
+      return
+    }
     setRequest({ x: x0, y: y0, w: x1 - x0, h: y1 - y0, time_s: 0 })
+  }
+
+  const runCopySearch = (source: Box) => {
+    if (!gpu || !gpuSrc) return
+    setCopies({ source, matches: [], best: -1, busy: true, error: null })
+    findCopies(gpu, gpuSrc, iw, ih, source)
+      .then(({ matches, best }) => setCopies({ source, matches, best, busy: false, error: null }))
+      .catch((e) => setCopies({ source, matches: [], best: -1, busy: false, error: String(e?.message ?? e) }))
   }
 
   const pointerDown = (e: React.PointerEvent) => {
     capture(e)
     const p = local(e)
-    if (enhanceMode) {
+    if (enhanceMode || copyMode) {
       setSel({ x0: p.x, y0: p.y, x1: p.x, y1: p.y })
       return
     }
@@ -315,7 +339,7 @@ export function PhotoStage({
     <div className="photo" id="photo-stage">
       <LensDefs />
       <div
-        className={`stage photo-canvas ${enhanceMode ? 'enhancing' : drag && pannable ? 'dragging' : pannable ? 'pannable' : ''}`}
+        className={`stage photo-canvas ${enhanceMode || copyMode ? 'enhancing' : drag && pannable ? 'dragging' : pannable ? 'pannable' : ''}`}
         ref={stageRef}
         style={{ height }}
         onPointerDown={pointerDown}
@@ -342,6 +366,7 @@ export function PhotoStage({
             ih={ih}
             pixelated={pixelated}
             onState={setGpuStatus}
+            onGhost={setGhostCounts}
           />
         )}
         <div className="photo-frame" style={frame}>
@@ -381,6 +406,18 @@ export function PhotoStage({
                 </span>
               </button>
             ))}
+          {copies && (
+            <>
+              <div className="copy-box source" style={{ left: `${copies.source.x * 100}%`, top: `${copies.source.y * 100}%`, width: `${copies.source.w * 100}%`, height: `${copies.source.h * 100}%` }}>
+                <span className="copy-tag">selected</span>
+              </div>
+              {copies.matches.map((m, i) => (
+                <div key={i} className="copy-box" style={{ left: `${m.x * 100}%`, top: `${m.y * 100}%`, width: `${m.w * 100}%`, height: `${m.h * 100}%` }}>
+                  <span className="copy-tag">{Math.round(m.score * 100)}%</span>
+                </div>
+              ))}
+            </>
+          )}
           {focused.box && (
             <div
               key={focused.nonce}
@@ -406,7 +443,7 @@ export function PhotoStage({
           />
         )}
 
-        {enhanceMode && (
+        {(enhanceMode || copyMode) && (
           <div className="enhance-layer passive">
             {selRect && selRect.w > 0 && (
               <div className="sel" style={{ left: selRect.x, top: selRect.y, width: selRect.w, height: selRect.h }}>
@@ -415,7 +452,11 @@ export function PhotoStage({
                 </span>
               </div>
             )}
-            {!selRect && <div className="enhance-hint">Drag a box around the detail you want to examine (Esc to cancel)</div>}
+            {!selRect && (
+              <div className="enhance-hint">
+                {copyMode ? 'Drag a box around the area to look for copies of (Esc to cancel)' : 'Drag a box around the detail you want to examine (Esc to cancel)'}
+              </div>
+            )}
           </div>
         )}
 
@@ -446,6 +487,21 @@ export function PhotoStage({
         </div>
         {!mediaUrl && <div className="stage-msg">Preparing a viewable copy…</div>}
         {hover && <div className="stage-msg top">{boxed.find((b) => b.f.id === hover)?.f.title}</div>}
+        {gpuLens?.mode === 'ghost' && <GhostLegend counts={ghostCounts} />}
+        {copies && (
+          <div className={`copy-status ${copies.error ? 'err' : ''}`}>
+            {copies.busy
+              ? 'Searching the whole picture on your GPU…'
+              : copies.error
+                ? copies.error
+                : copies.matches.length
+                  ? `${copies.matches.length} look-alike${copies.matches.length === 1 ? '' : 's'} found (${copies.matches.map((m) => `${Math.round(m.score * 100)}%`).join(', ')}). 100% = identical. Check them: repeated patterns (tiles, windows) also match.`
+                  : `No copies found: nothing else matches this area closely (80%+)${copies.best > 0 ? `; the closest look-alike is ${Math.round(copies.best * 100)}%` : ''}.`}
+            <button className="ctl txt" onClick={() => setCopies(null)} onPointerDown={(e) => e.stopPropagation()}>
+              Clear
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="controls photo-controls">
@@ -494,7 +550,7 @@ export function PhotoStage({
             <input type="range" min={50} max={98} step={1} value={elaQuality} onChange={(e) => setElaQuality(Number(e.target.value))} aria-label="Re-save quality" />
           </label>
         )}
-        {gpuLens && (
+        {gpuLens && gpuLens.mode !== 'ghost' && (
           <label className="lens-slider" data-tip="Amplify the differences">
             <span>×{gain}</span>
             <input type="range" min={gpuLens.gain[0]} max={gpuLens.gain[1]} step={1} value={gain} onChange={(e) => setGains((g) => ({ ...g, [gpuLens.key]: Number(e.target.value) }))} aria-label="Gain" />
@@ -530,7 +586,28 @@ export function PhotoStage({
         <button className={`ctl ${loupe ? 'on' : ''}`} onClick={() => setLoupe((l) => !l)} data-tip="Magnifier under the cursor (M)" aria-label="Magnifier">
           <Icon name="magnifying-glass" />
         </button>
-        <button className={`btn btn-red sm ${enhanceMode ? 'on' : ''}`} onClick={() => setEnhanceMode((m) => !m)} disabled={!mediaUrl} data-tip="Enlarge a region at full resolution with eight forensic lenses (Z)">
+        {gpu && (
+          <button
+            className={`ctl txt ${copyMode ? 'on' : ''}`}
+            onClick={() => {
+              setEnhanceMode(false)
+              setCopyMode((m) => !m)
+            }}
+            disabled={!gpuSrc}
+            data-tip="Select an area and search the whole picture for copies of it (cloned, copy-pasted areas), on your GPU (C)"
+          >
+            <Icon name="clone" /> Find copies
+          </button>
+        )}
+        <button
+          className={`btn btn-red sm ${enhanceMode ? 'on' : ''}`}
+          onClick={() => {
+            setCopyMode(false)
+            setEnhanceMode((m) => !m)
+          }}
+          disabled={!mediaUrl}
+          data-tip="Enlarge a region at full resolution with eight forensic lenses (Z)"
+        >
           <Icon name="magnifying-glass-plus" /> Examine a detail
         </button>
       </div>
@@ -571,6 +648,49 @@ export function RegionList({ findings, onOpenFinding }: { findings: Finding[]; o
           ))}
         </ul>
       )}
+    </div>
+  )
+}
+
+/** Colour key for the JPEG ghost lens, and what the block counts say. */
+function GhostLegend({ counts }: { counts: number[] | null }) {
+  // Same hue ramp as ghostColour in the shader: red (Q30) to blue (Q100).
+  const hue = (q: number) => {
+    const h = Math.min(1, Math.max(0, (q - 30) / 70)) * 4
+    const c = [Math.abs(h - 3) - 1, 2 - Math.abs(h - 2), 2 - Math.abs(h - 4)].map((v) => Math.round((Math.min(1, Math.max(0, v)) * 0.85 + 0.15) * 255))
+    return `rgb(${c.join(',')})`
+  }
+  const known = counts ? counts.slice(0, GHOST_QUALITIES.length) : null
+  const total = known ? known.reduce((a, b) => a + b, 0) : 0
+  const top = known && total ? known.indexOf(Math.max(...known)) : -1
+  const domQ = top >= 0 ? GHOST_QUALITIES[top] : 0
+  const odd = known && top >= 0 ? known.map((n, k) => ({ q: GHOST_QUALITIES[k], n })).filter((x) => x.n > 0 && Math.abs(x.q - domQ) > 1) : []
+  const oddN = odd.reduce((a, x) => a + x.n, 0)
+  return (
+    <div className="ghost-legend" onPointerDown={(e) => e.stopPropagation()}>
+      <div className="ghost-bar">
+        {Array.from({ length: 15 }, (_, i) => 30 + 5 * i).map((q) => (
+          <span key={q} style={{ background: hue(q) }} title={`saved at about Q${q}`} />
+        ))}
+      </div>
+      <div className="ghost-scale mono">
+        <span>Q30</span>
+        <span>Q65</span>
+        <span>Q100</span>
+      </div>
+      <div className="ghost-note">
+        {!counts
+          ? 'Measuring…'
+          : top < 0
+            ? 'No block carries a clear JPEG quality (not a JPEG, or very smooth).'
+            : oddN
+              ? `Most of the picture was saved at Q${domQ} (dimmed). ${oddN} block${oddN === 1 ? '' : 's'} (${((oddN / total) * 100).toFixed(1)}%) point to another quality (${odd
+                  .sort((a, b) => b.n - a.n)
+                  .slice(0, 4)
+                  .map((x) => `Q${x.q}`)
+                  .join(', ')}), coloured. Small scattered blocks are often noise; a solid patch is a pasted area.`
+              : `The whole picture fits one save quality, Q${domQ}: no area points to another.`}
+      </div>
     </div>
   )
 }
