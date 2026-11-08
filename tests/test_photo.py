@@ -11,7 +11,7 @@ from earwitness import demo_photo
 from earwitness.server.jobs import CaseStore
 
 os.environ["EARWITNESS_OFFLINE"] = "1"
-AI_KEYS = ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
+AI_KEYS = ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "EARWITNESS_OLLAMA_URL")
 
 for _key in AI_KEYS:
     os.environ.pop(_key, None)

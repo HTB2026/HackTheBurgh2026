@@ -169,7 +169,7 @@ export interface AuthConfig {
   audience: string
 }
 
-export type AiProvider = 'openai' | 'gemini'
+export type AiProvider = 'openai' | 'gemini' | 'ollama'
 
 export interface Health {
   ok: boolean

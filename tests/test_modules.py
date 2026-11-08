@@ -12,7 +12,7 @@ from earwitness import demo as fixtures
 from earwitness.server.jobs import CaseStore
 
 os.environ["EARWITNESS_OFFLINE"] = "1"
-for _key in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+for _key in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY", "EARWITNESS_OLLAMA_URL"):
     os.environ.pop(_key, None)
 
 
