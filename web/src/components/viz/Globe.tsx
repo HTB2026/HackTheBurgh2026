@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { textureFromSource, uniformBuffer, useGpuCanvas, type Gpu } from '../../lib/gpu'
+import { textureWithMips, uniformBuffer, useGpuCanvas, type Gpu } from '../../lib/gpu'
 import { lookAt, multiply, perspective, type Vec3 } from '../../lib/mat4'
 import { GLOBE, ARCS } from '../../lib/shaders/globe.wgsl'
 import { radiusText, type MapPoint } from './MapView'
@@ -50,32 +50,37 @@ function resources(gpu: Gpu): Res {
       depthStencil: { ...depthStencil, depthWriteEnabled: false },
       label: 'arcs',
     }),
-    uniforms: uniformBuffer(device, 112),
-    sampler: device.createSampler({ magFilter: 'linear', minFilter: 'linear', addressModeU: 'repeat' }),
+    uniforms: uniformBuffer(device, 128),
+    sampler: device.createSampler({ magFilter: 'linear', minFilter: 'linear', mipmapFilter: 'linear', addressModeU: 'repeat', maxAnisotropy: 8 }),
   }
   cache.set(device, made)
   return made
 }
 
-/** World imagery: 4x4 zoom-2 tiles stitched into one Web Mercator image (Esri, else OpenStreetMap). */
-async function earthImage(): Promise<OffscreenCanvas | null> {
-  const sources = [
-    (z: number, x: number, y: number) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
-    (z: number, x: number, y: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
-  ]
-  for (const url of sources) {
+const TILE_SOURCES = [
+  (z: number, x: number, y: number) => `https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/${z}/${y}/${x}`,
+  (z: number, x: number, y: number) => `https://tile.openstreetmap.org/${z}/${x}/${y}.png`,
+]
+
+/**
+ * Stitch an n x n block of 256 px Web Mercator tiles at zoom z, starting at tile (x0, y0),
+ * into one image (Esri World Imagery, else OpenStreetMap). At most 12 requests at a time.
+ */
+async function stitch(z: number, x0: number, y0: number, n: number): Promise<OffscreenCanvas | null> {
+  for (const url of TILE_SOURCES) {
     try {
-      const canvas = new OffscreenCanvas(1024, 1024)
+      const canvas = new OffscreenCanvas(n * 256, n * 256)
       const g = canvas.getContext('2d')!
-      await Promise.all(
-        Array.from({ length: 16 }, async (_, i) => {
-          const x = i % 4
-          const y = Math.floor(i / 4)
-          const r = await fetch(url(2, x, y), { mode: 'cors' })
+      const jobs = Array.from({ length: n * n }, (_, i) => [i % n, Math.floor(i / n)] as const)
+      const worker = async () => {
+        for (let job = jobs.shift(); job; job = jobs.shift()) {
+          const [dx, dy] = job
+          const r = await fetch(url(z, x0 + dx, y0 + dy), { mode: 'cors' })
           if (!r.ok) throw new Error(`tile ${r.status}`)
-          g.drawImage(await createImageBitmap(await r.blob()), x * 256, y * 256)
-        }),
-      )
+          g.drawImage(await createImageBitmap(await r.blob()), dx * 256, dy * 256)
+        }
+      }
+      await Promise.all(Array.from({ length: 12 }, worker))
       return canvas
     } catch {
       /* try the next source */
@@ -84,7 +89,24 @@ async function earthImage(): Promise<OffscreenCanvas | null> {
   return null
 }
 
-let earthPromise: Promise<OffscreenCanvas | null> | null = null
+// World imagery, shared by every globe: a quick 1024 px image first, then 4096 px.
+let earthQuick: Promise<OffscreenCanvas | null> | null = null
+let earthSharp: Promise<OffscreenCanvas | null> | null = null
+
+/** Zoom level and size (tiles per side) of the sharp patch loaded around the place in view. */
+const DETAIL_Z = 9
+const DETAIL_N = 8
+
+/** The DETAIL_N x DETAIL_N block of zoom-DETAIL_Z tiles centred on a point, and its Mercator bounds. */
+function detailBlock(lat: number, lon: number) {
+  const tiles = 2 ** DETAIL_Z
+  const mx = (lon + 180) / 360
+  const s = Math.sin(Math.max(-85.05, Math.min(85.05, lat)) * RAD)
+  const my = 0.5 - Math.log((1 + s) / (1 - s)) / (4 * Math.PI)
+  const x0 = Math.max(0, Math.min(tiles - DETAIL_N, Math.floor(mx * tiles) - DETAIL_N / 2 + 1))
+  const y0 = Math.max(0, Math.min(tiles - DETAIL_N, Math.floor(my * tiles) - DETAIL_N / 2 + 1))
+  return { x0, y0, key: `${x0}/${y0}`, bounds: [x0 / tiles, y0 / tiles, (x0 + DETAIL_N) / tiles, (y0 + DETAIL_N) / tiles] as [number, number, number, number] }
+}
 
 interface Cam {
   lat: number
@@ -104,8 +126,8 @@ const slerpCam = (a: Cam, b: Cam, t: number): Cam => {
 
 const camFor = (p: MapPoint): Cam => {
   const r = Math.min(Math.PI, (p.accuracy_m ?? 50_000) / EARTH_M)
-  // The imagery is a world-scale texture: stop at a regional view, never street level.
-  return { lat: p.lat * RAD, lon: p.lon * RAD, dist: 1 + Math.min(2.6, Math.max(0.42, r * 3.2)) }
+  // Close enough to see the sharp patch, but never closer than ~300 km up.
+  return { lat: p.lat * RAD, lon: p.lon * RAD, dist: 1 + Math.min(2.6, Math.max(0.05, r * 3.2)) }
 }
 
 /**
@@ -117,26 +139,61 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
   const pts = useMemo(() => points.filter((p) => isFinite(p?.lat) && isFinite(p?.lon)).slice(0, MAX_POINTS), [points])
   const [earth, setEarth] = useState<GPUTexture | null>(null)
   const [noImagery, setNoImagery] = useState(false)
+  const [detail, setDetail] = useState<{ texture: GPUTexture; bounds: [number, number, number, number]; key: string } | null>(null)
+  const [detailFor, setDetailFor] = useState<MapPoint | null>(null)
   const cam = useRef<Cam>({ lat: 20 * RAD, lon: 0, dist: 3.4 })
   const flight = useRef<{ from: Cam; to: Cam; start: number; ms: number } | null>(null)
   const drag = useRef<{ x: number; y: number; cam: Cam } | null>(null)
   const depth = useRef<GPUTexture | null>(null)
   const raf = useRef(0)
   const bind = useRef<{ globe: GPUBindGroup; arcs: GPUBindGroup; arcCount: number } | null>(null)
+  const detailRef = useRef<[number, number, number, number] | null>(null)
+  detailRef.current = detail?.bounds ?? null
 
-  // Imagery, shared across globes.
+  // World imagery: show the quick 1024 px image at once, swap in the 4096 px one when it arrives.
   useEffect(() => {
     let live = true
-    earthPromise ??= earthImage()
-    earthPromise.then((img) => {
+    const made: GPUTexture[] = []
+    ;(async () => {
+      earthQuick ??= stitch(2, 0, 0, 4)
+      const quick = await earthQuick
       if (!live) return
-      if (!img) return setNoImagery(true)
-      setEarth(textureFromSource(gpu.device, img).texture)
+      if (!quick) return setNoImagery(true)
+      const first = textureWithMips(gpu.device, quick)
+      made.push(first)
+      setEarth((e) => e ?? first)
+      earthSharp ??= stitch(4, 0, 0, 16)
+      const sharp = await earthSharp
+      if (!live || !sharp) return
+      const second = textureWithMips(gpu.device, sharp)
+      made.push(second)
+      setEarth(second)
+    })()
+    return () => {
+      live = false
+      made.forEach((t) => t.destroy())
+    }
+  }, [gpu])
+
+  // A sharp patch (zoom 9, about 500 km across) around the place the camera is flying to.
+  useEffect(() => {
+    if (!detailFor) return
+    const block = detailBlock(detailFor.lat, detailFor.lon)
+    if (detail?.key === block.key) return
+    let live = true
+    stitch(DETAIL_Z, block.x0, block.y0, DETAIL_N).then((img) => {
+      if (!live || !img) return
+      const texture = textureWithMips(gpu.device, img)
+      setDetail((old) => {
+        old?.texture.destroy()
+        return { texture, bounds: block.bounds, key: block.key }
+      })
     })
     return () => {
       live = false
     }
-  }, [gpu])
+  }, [gpu, detailFor]) // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => () => detail?.texture.destroy(), []) // eslint-disable-line react-hooks/exhaustive-deps
 
   // Point and arc buffers, rebuilt when the points or imagery change.
   useEffect(() => {
@@ -162,15 +219,16 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
     const aBuf = device.createBuffer({ size: A.byteLength, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_DST })
     device.queue.writeBuffer(pBuf, 0, P)
     device.queue.writeBuffer(aBuf, 0, A)
-    const placeholder = earth ?? device.createTexture({ size: [1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING })
+    const blank = device.createTexture({ size: [1, 1], format: 'rgba8unorm', usage: GPUTextureUsage.TEXTURE_BINDING })
     bind.current = {
       globe: device.createBindGroup({
         layout: R.globe.getBindGroupLayout(0),
         entries: [
           { binding: 0, resource: { buffer: R.uniforms } },
           { binding: 1, resource: { buffer: pBuf } },
-          { binding: 2, resource: placeholder.createView() },
+          { binding: 2, resource: (earth ?? blank).createView() },
           { binding: 3, resource: R.sampler },
+          { binding: 4, resource: (detail?.texture ?? blank).createView() },
         ],
       }),
       arcs: device.createBindGroup({
@@ -185,15 +243,16 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
     return () => {
       pBuf.destroy()
       aBuf.destroy()
-      if (!earth) placeholder.destroy()
+      blank.destroy()
     }
-  }, [gpu, pts, earth])
+  }, [gpu, pts, earth, detail])
 
   // Fly to the answer on open, and to a row when the table asks.
   useEffect(() => {
     const p = pts[focus.index >= 0 ? focus.index : globeTarget(pts)]
     if (!p) return
     flight.current = { from: { ...cam.current }, to: camFor(p), start: performance.now(), ms: focus.nonce === 0 ? 2600 : 1600 }
+    if ((p.accuracy_m ?? 0) < 2_000_000) setDetailFor(p)
   }, [focus.index, focus.nonce, pts])
 
   // Render loop (the pins pulse and arcs flow); paused when the tab is hidden.
@@ -215,10 +274,11 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
       const up: Vec3 = Math.abs(c.lat) > 1.5 ? [0, 0, -1] : [0, 1, 0]
       const near = Math.max(0.001, (c.dist - 1) * 0.3)
       const vp = multiply(perspective(0.7, size.width / size.height, near, c.dist + 2), lookAt(eye, [0, 0, 0], up))
-      const u = new Float32Array(28)
+      const u = new Float32Array(32)
       u.set(vp, 0)
       u.set([...eye, c.dist], 16)
-      u.set([pts.length, earth ? 1 : 0, now / 1000, 0], 20)
+      u.set([pts.length, earth ? 1 : 0, now / 1000, detailRef.current ? 1 : 0], 20)
+      u.set(detailRef.current ?? [0, 0, 0, 0], 24)
       device.queue.writeBuffer(R.uniforms, 0, u)
       if (!depth.current || depth.current.width !== size.width || depth.current.height !== size.height) {
         depth.current?.destroy()
@@ -255,7 +315,8 @@ export function Globe({ gpu, points, height = 420, focus }: { gpu: Gpu; points: 
       flight.current = null
       const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? 400 : 1)
       const c = cam.current
-      cam.current = { ...c, dist: 1 + Math.min(5, Math.max(0.12, (c.dist - 1) * Math.exp(px * 0.002))) }
+      // Down to ~130 km up (the sharp patch holds up to about there).
+      cam.current = { ...c, dist: 1 + Math.min(5, Math.max(0.02, (c.dist - 1) * Math.exp(px * 0.002))) }
     }
     el.addEventListener('wheel', on, { passive: false })
     return () => el.removeEventListener('wheel', on)

@@ -181,9 +181,9 @@ export function Landing({ examine }: { examine?: boolean }) {
       />
 
       <section className="home-intro">
-        <HeroField peaks={heroPeaks} />
         <h1>Every photo and video is a witness.</h1>
         <p>Drop in a video or photograph to examine what it can reveal.</p>
+        <HeroField peaks={heroPeaks} />
       </section>
       <div className="home">
         <div className="home-main">

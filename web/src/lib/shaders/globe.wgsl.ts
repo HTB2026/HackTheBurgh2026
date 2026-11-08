@@ -4,7 +4,8 @@ const COMMON = /* wgsl */ `
 struct U {
   viewProj: mat4x4f,
   eye: vec4f,          // camera position (w: distance from centre)
-  info: vec4f,         // x: number of points, y: has texture, z: time (s)
+  info: vec4f,         // x: number of points, y: has texture, z: time (s), w: has detail patch
+  detail: vec4f,       // detail patch bounds in Web Mercator 0..1: x0, y0, x1, y1
 };
 struct Pt { v: vec4f };  // lat (rad), lon (rad), radius (rad on the sphere), kind
 @group(0) @binding(0) var<uniform> u: U;
@@ -29,6 +30,7 @@ export const GLOBE = /* wgsl */ `
 ${COMMON}
 @group(0) @binding(2) var earth: texture_2d<f32>;
 @group(0) @binding(3) var samp: sampler;
+@group(0) @binding(4) var detail: texture_2d<f32>;
 
 struct Out { @builtin(position) pos: vec4f, @location(0) p: vec3f };
 
@@ -56,11 +58,28 @@ fn fs(i: Out) -> @location(0) vec4f {
   let lat = asin(clamp(n.y, -1.0, 1.0));
   let lon = atan2(n.x, n.z);
   var c = vec3f(0.07, 0.08, 0.11);
+  // Web Mercator coordinates (latitude is not linear in y). Derivatives must be taken in
+  // uniform control flow; the x seam at +-180 deg uses the smaller of two wrapped derivatives
+  // so mip selection doesn't spike into a visible line there.
+  let mlat = clamp(lat, -1.4844, 1.4844);
+  let mx = (lon + PI) / (2.0 * PI);
+  let my = 0.5 - log(tan(PI / 4.0 + mlat / 2.0)) / (2.0 * PI);
+  let mx2 = fract(mx + 0.5);
+  let dxa = vec2f(dpdx(mx), dpdy(mx));
+  let dxb = vec2f(dpdx(mx2), dpdy(mx2));
+  let dmx = select(dxa, dxb, abs(dxb.x) + abs(dxb.y) < abs(dxa.x) + abs(dxa.y));
+  let dmy = vec2f(dpdx(my), dpdy(my));
+  let base = textureSampleGrad(earth, samp, vec2f(mx, my), vec2f(dmx.x, dmy.x), vec2f(dmx.y, dmy.y)).rgb;
+  // A sharp patch around the answer, when loaded.
+  let span = max(u.detail.zw - u.detail.xy, vec2f(1e-6));
+  let duv = (vec2f(mx, my) - u.detail.xy) / span;
+  let fine = textureSampleGrad(detail, samp, duv, vec2f(dmx.x, dmy.x) / span, vec2f(dmx.y, dmy.y) / span).rgb;
   if (u.info.y > 0.5 && abs(lat) < 1.4844) {
-    // Web Mercator tiles: latitude is not linear in v.
-    let uvx = (lon + PI) / (2.0 * PI);
-    let uvy = 0.5 - log(tan(PI / 4.0 + lat / 2.0)) / (2.0 * PI);
-    c = textureSampleLevel(earth, samp, vec2f(uvx, uvy), 0.0).rgb;
+    c = base;
+    if (u.info.w > 0.5) {
+      let edge = min(min(duv.x, duv.y), min(1.0 - duv.x, 1.0 - duv.y));
+      c = mix(c, fine, smoothstep(0.0, 0.04, edge));
+    }
   }
   // Graticule every 30 degrees, faint.
   let gl = vec2f(lat, lon) * (6.0 / PI);
@@ -76,7 +95,7 @@ fn fs(i: Out) -> @location(0) vec4f {
   // Uncertainty caps and pins, drawn on the surface.
   let count = u32(u.info.x);
   // Pin size follows the height above the surface, so pins stay the same size on screen.
-  let pinR = 0.018 * (u.eye.w - 1.0) + 0.00004;
+  let pinR = 0.011 * (u.eye.w - 1.0) + 0.00003;
   for (var k = 0u; k < count; k++) {
     let q = pts[k].v;
     let centre = onSphere(q.x, q.y);
@@ -96,7 +115,7 @@ fn fs(i: Out) -> @location(0) vec4f {
     if (q.z > 1.5) { continue; }
     let pulse = 0.5 + 0.5 * sin(u.info.z * 3.0 + f32(k));
     let pin = 1.0 - smoothstep(pinR * 0.55, pinR, d);
-    let glow = (1.0 - smoothstep(pinR, pinR * (2.2 + pulse), d)) * 0.5;
+    let glow = (1.0 - smoothstep(pinR, pinR * (1.7 + 0.6 * pulse), d)) * 0.45;
     c = mix(c, col, glow);
     c = mix(c, mix(col, vec3f(1.0), 0.35), pin);
   }

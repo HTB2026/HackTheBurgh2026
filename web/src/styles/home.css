@@ -10,16 +10,31 @@
   position: relative;
   z-index: 1;
 }
-/* WebGPU particle field behind the heading (absent without WebGPU). */
+/* WebGPU particle field (absent without WebGPU): in the empty space right of the heading,
+   fading in from the text side; under the text on narrow screens. */
 .hero-field {
   position: absolute;
-  inset: -6px 0 -6px 0;
-  width: 100%;
-  height: calc(100% + 12px);
+  top: 0;
+  bottom: 0;
+  left: 50%;
+  right: 0;
+  width: 50%;
+  height: 100%;
   pointer-events: none;
-  opacity: 0.6;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 35%, #000 85%, transparent 100%);
-  mask-image: linear-gradient(90deg, transparent 0, #000 35%, #000 85%, transparent 100%);
+  opacity: 0.75;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 30%, #000 88%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 30%, #000 88%, transparent 100%);
+}
+@media (max-width: 900px) {
+  .hero-field {
+    position: static;
+    display: block;
+    width: 100%;
+    height: 56px;
+    margin-top: 12px;
+    -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+    mask-image: linear-gradient(90deg, transparent 0, #000 12%, #000 88%, transparent 100%);
+  }
 }
 .home-intro h1 {
   font-size: 30px;
