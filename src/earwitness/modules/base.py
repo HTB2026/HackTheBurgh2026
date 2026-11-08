@@ -8,6 +8,7 @@ case runner turns those calls into JSON events that the web UI streams.
 import asyncio
 import itertools
 import json
+import numbers
 import os
 import subprocess
 import time
@@ -628,7 +629,20 @@ def _jsonable(value: Any) -> Any:
     if hasattr(value, "isoformat"):
         return value.isoformat()
 
-    return value
+    if value is None or isinstance(value, (str, bool, int)):
+        return value
+
+    # Other numbers, e.g. PIL's IFDRational for EXIF fractions (a 72/1 dpi).
+    if isinstance(value, numbers.Integral):
+        return int(value)
+
+    if isinstance(value, numbers.Real):
+        return _jsonable(float(value))
+
+    if isinstance(value, bytes):
+        return value.decode("utf-8", "replace")
+
+    return str(value)
 
 
 def downsample_series(

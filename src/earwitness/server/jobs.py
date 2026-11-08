@@ -47,12 +47,17 @@ class Case:
 
     def emit(self, event: dict[str, Any]) -> None:
         event = {"seq": len(self.events), "ts": round(time.time(), 3), **event}
+        # Encode before keeping it: an event that cannot be sent would otherwise
+        # stay in memory and break every page load and WebSocket of the case.
+        # Anything still not JSON-able becomes text; memory then matches disk.
+        line = json.dumps(event, default=str)
+        event = json.loads(line)
         self.events.append(event)
 
         if self._log is None:
             self._log = open(os.path.join(self.workdir, "events.jsonl"), "a")
 
-        self._log.write(json.dumps(event) + "\n")
+        self._log.write(line + "\n")
         self._log.flush()
 
         for queue in list(self.listeners):
