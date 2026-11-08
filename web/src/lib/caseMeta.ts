@@ -1,7 +1,8 @@
 // The case list has no verdict; pull it (and a waveform for the hero) from each case's event log, cached.
 import { useEffect, useState } from 'react'
-import type { CaseEvent, CaseSummary } from './types'
+import type { CaseSummary } from './types'
 import { verdictOf, type Verdict } from './plain'
+import { api } from './api'
 
 export interface CaseMeta {
   verdict: Verdict
@@ -26,8 +27,7 @@ async function load(c: CaseSummary): Promise<CaseMeta> {
   } catch {
     /* ignore */
   }
-  const res = await fetch(`/api/cases/${encodeURIComponent(c.id)}`)
-  const body = (await res.json()) as { events: CaseEvent[] }
+  const body = await api.events(c.id)
   let verdict: Verdict = c.status === 'done' ? 'unknown' : 'running'
   let peaks: number[] | null = null
   let summary: string | null = null

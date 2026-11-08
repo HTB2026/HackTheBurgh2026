@@ -19,6 +19,27 @@ uv run earwitness serve                  # http://127.0.0.1:8765
 uv run earwitness demo --out demo        # demo pack with planted ground truth
 ```
 
+For **frontend-only development**, no Python server, database, login service or
+API key is needed:
+
+```sh
+cd web
+npm ci
+npm run dev -- --port 5174
+# Open http://localhost:5174/?mock=planted&extras
+```
+
+`&extras` opens a fully populated case immediately, with up to three key findings
+and evidence available inline. Technical details start closed. The preview bar
+switches between video, edited photo, AI-generated photo and clean-verdict
+examples; it also opens the case gallery, toggles technical details, replays
+progress and resets the session. Media, maps, reports and
+enhancement previews are served locally. Uploads stay in browser memory and
+use synthetic findings; enhancement crops the selected region with browser
+colour filters. No forensic analysis or AI requests run in this mode. Refresh
+to restore deleted examples and clear uploaded files. Add `&replay` to animate
+the initial load. Mock mode is only available in the Vite development server.
+
 Optional extras, configured in `.env` (gitignored):
 
 ```sh

@@ -1,0 +1,8 @@
+.mock-preview { border-bottom: 1px solid #685232; background: #211c14; color: #ebdbbd; }
+.mock-preview-inner { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 12px; padding-top: 14px; padding-bottom: 14px; }
+.mock-preview-label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; }
+.mock-preview-label b { font-size: 14px; color: #f9d58c; }
+.mock-preview-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.mock-select { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.mock-select select { max-width: 220px; padding: 7px 10px; background: #171717; border: 1px solid #685232; color: #eee; border-radius: 4px; font: inherit; }
+@media (max-width: 650px) { .mock-preview-actions { width: 100%; } .mock-select { width: 100%; } .mock-select select { flex: 1; max-width: none; } }

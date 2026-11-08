@@ -1,6 +1,7 @@
 import { Auth0Provider, useAuth0 } from '@auth0/auth0-react'
-import { createContext, useContext, useEffect, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import type { AuthConfig } from './types'
+import { mockName } from './mock'
 
 /** What the header needs; `enabled` is false when the server has no Auth0 config. */
 export interface AuthState {
@@ -63,6 +64,7 @@ function Bridge({ children }: { children: ReactNode }) {
 
 /** Wraps the app in Auth0 when the server publishes a login config; otherwise a no-op. */
 export function AuthProvider({ config, children }: { config: AuthConfig | null | undefined; children: ReactNode }) {
+  if (mockName()) return <MockAuthProvider>{children}</MockAuthProvider>
   if (!config) return <AuthContext.Provider value={disabled}>{children}</AuthContext.Provider>
   return (
     <Auth0Provider
@@ -81,4 +83,9 @@ export function AuthProvider({ config, children }: { config: AuthConfig | null |
       <Bridge>{children}</Bridge>
     </Auth0Provider>
   )
+}
+
+function MockAuthProvider({ children }: { children: ReactNode }) {
+  const [loggedIn, setLoggedIn] = useState(true)
+  return <AuthContext.Provider value={{ enabled: true, loading: false, user: loggedIn ? { name: 'Preview user', email: 'preview@localhost' } : null, login: () => setLoggedIn(true), logout: () => setLoggedIn(false) }}>{children}</AuthContext.Provider>
 }

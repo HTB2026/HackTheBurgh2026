@@ -1,4 +1,5 @@
 import type { CaseEvent } from './types'
+import { completeShowcase } from './mockShowcase'
 
 /** Dev-only: ?mock=planted | ?mock=iphone replays a recorded event stream. */
 export function mockName(): string | null {
@@ -16,8 +17,9 @@ export async function loadMock(name: string): Promise<CaseEvent[]> {
     .split('\n')
     .filter((l) => l.trim())
     .map((l) => JSON.parse(l) as CaseEvent)
-  if (new URLSearchParams(location.search).has('extras')) events.push(...extras(events))
-  return events
+  const full = new URLSearchParams(location.search).has('extras')
+  if (full) events.push(...extras(events))
+  return completeShowcase(events, name, full)
 }
 
 /** Synthetic events for kinds the recorded streams don't contain yet (dev aid, `&extras`). */

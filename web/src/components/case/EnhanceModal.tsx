@@ -4,6 +4,7 @@ import type { EnhanceResult, Lens } from '../../lib/types'
 import { mmss } from '../../lib/format'
 import { capture } from '../../lib/pointer'
 import { useMediaKind } from '../../lib/region'
+import { mockName } from '../../lib/mock'
 import { Icon, Modal } from '../ui/ui'
 
 export interface EnhanceBox {
@@ -149,7 +150,7 @@ export function EnhanceModal({ caseId, box, onClose }: { caseId: string; box: En
               </a>
             </dl>
             <p className="muted small">
-              {still
+              {mockName() ? 'UI preview: the selected region is cropped locally and shown with browser colour filters. Multi-frame enhancement and forensic processing have not run.' : still
                 ? 'Nothing here invents pixels: the crop is taken from the original file at full resolution, enlarged, and shown through lenses (error levels, grain, channels, edges) that make existing detail visible. Treat what you read as something to confirm, not proof.'
                 : 'Enhancing combines real detail from several frames; it does not invent pixels. Still, treat what you read here as something to confirm, not proof.'}
             </p>
