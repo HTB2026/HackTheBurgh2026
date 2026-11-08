@@ -147,3 +147,29 @@
   margin: 14px 0 6px;
   font-size: 14px;
 }
+
+/* AI model choice above the drop zone */
+.ai-choice {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin-bottom: 10px;
+}
+.ai-choice-label {
+  color: var(--muted);
+  font-size: 13.5px;
+}
+.ai-choice-label i {
+  margin-right: 6px;
+}
+.ai-tabs {
+  flex: 0 0 auto;
+  border: 1px solid var(--line);
+}
+.ai-tabs button {
+  min-width: 84px;
+}
+.ai-tabs button:disabled {
+  cursor: default;
+}
