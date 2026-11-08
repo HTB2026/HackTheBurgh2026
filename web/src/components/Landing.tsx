@@ -12,6 +12,16 @@ import { HeroField } from './HeroField'
 import { VERDICT, verdictOf, type Verdict } from '../lib/plain'
 import { Alert, Empty, Icon, Redacted, SectionTitle } from './ui/ui'
 
+/** Clipboard images all arrive as "image.png"; give each a findable, dated name. */
+function pastedName(f: File): File {
+  if (f.name && f.name !== 'image.png' && f.name !== 'image.jpeg') return f
+  const d = new Date()
+  const p = (n: number) => String(n).padStart(2, '0')
+  const stamp = `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`
+  const ext = f.type.split('/')[1]?.replace('jpeg', 'jpg') || 'png'
+  return new File([f], `pasted-${stamp}.${ext}`, { type: f.type, lastModified: f.lastModified })
+}
+
 function VerdictPill({ v }: { v: Verdict | undefined }) {
   const key = v ?? 'unknown'
   const d = VERDICT[key]
@@ -159,15 +169,26 @@ export function Landing({ examine }: { examine?: boolean }) {
       const f = e.dataTransfer?.files?.[0]
       if (f) send(f)
     }
+    // ...and a pasted image or clip (Cmd/Ctrl+V), unless the paste is going into a text field.
+    const paste = (e: ClipboardEvent) => {
+      const target = e.target as HTMLElement | null
+      if (target?.closest('input, textarea, [contenteditable="true"]')) return
+      const f = [...(e.clipboardData?.files ?? [])].find((x) => /^(image|video|audio)\//.test(x.type))
+      if (!f || upload) return
+      e.preventDefault()
+      send(pastedName(f))
+    }
     window.addEventListener('dragover', over)
     window.addEventListener('dragleave', leave)
     window.addEventListener('drop', drop)
+    window.addEventListener('paste', paste)
     return () => {
       window.removeEventListener('dragover', over)
       window.removeEventListener('dragleave', leave)
       window.removeEventListener('drop', drop)
+      window.removeEventListener('paste', paste)
     }
-  }, [send])
+  }, [send, upload])
 
   useEffect(() => {
     if (!examine) return
@@ -266,7 +287,7 @@ export function Landing({ examine }: { examine?: boolean }) {
               <>
                 <Icon name="cloud-arrow-up" className="drop-icon" />
                 <div>
-                  <b>Drop a file here, or click to choose one</b>
+                  <b>Drop a file here, paste an image, or click to choose one</b>
                   <span className="muted">Most clips take under a minute. You can watch the checks run.</span>
                 </div>
               </>

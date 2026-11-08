@@ -59,9 +59,27 @@ export function AnalysisLive({ state, facts }: { state: CaseState; facts: Facts 
         : 'Waiting for a free analyst'
   const detail = opening
     ? `Fingerprinting the file and making a copy every browser can ${still ? 'show' : 'play'}.`
-    : lead?.message || modulePlain(lead?.name ?? '', lead?.title).does
+    : lead
+      ? lead.message || modulePlain(lead.name, lead.title).does
+      : ''
   const also = running.slice(1).map((m) => modulePlain(m.name, m.title).name)
   const feed = state.logs.slice(-5)
+  // Simple by default; the full check list and log are one click away (remembered).
+  const [more, setMore] = useState(() => {
+    try {
+      return localStorage.getItem('earwitness.liveMore') === '1'
+    } catch {
+      return false
+    }
+  })
+  const toggleMore = () => {
+    setMore(!more)
+    try {
+      localStorage.setItem('earwitness.liveMore', more ? '0' : '1')
+    } catch {
+      /* private mode */
+    }
+  }
 
   return (
     <section className="live" aria-live="polite">
@@ -87,7 +105,7 @@ export function AnalysisLive({ state, facts }: { state: CaseState; facts: Facts 
           <i />
         </span>
       </h2>
-      <p className="live-detail">
+      <p className="live-detail" hidden={!detail && !also.length}>
         {lead && <Icon name={modulePlain(lead.name, lead.title).icon} />} {detail}
         {also.length > 0 && <span className="faint"> · also running: {also.join(', ')}</span>}
       </p>
@@ -107,6 +125,12 @@ export function AnalysisLive({ state, facts }: { state: CaseState; facts: Facts 
       </div>
 
       {!opening && (
+        <button type="button" className="live-more" aria-expanded={more} onClick={toggleMore}>
+          <Icon name={more ? 'chevron-up' : 'chevron-down'} /> {more ? 'Hide the details' : 'Show every check and the activity log'}
+        </button>
+      )}
+
+      {more && !opening && (
         <ol className="live-steps">
           {mods.map((m) => {
             const p = modulePlain(m.name, m.title)
@@ -124,7 +148,7 @@ export function AnalysisLive({ state, facts }: { state: CaseState; facts: Facts 
         </ol>
       )}
 
-      {feed.length > 0 && (
+      {more && feed.length > 0 && (
         <div className="live-feed mono" aria-hidden>
           {feed.map((l) => (
             <div key={l.seq} className={l.level}>

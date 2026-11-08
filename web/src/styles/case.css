@@ -2109,3 +2109,19 @@ td.lb-title > * {
 @media (prefers-reduced-motion: reduce) {
   .live-head, .live-dots i, .live-bar .seg.running i, .live-cursor { animation: none; }
 }
+.live-bar { margin-bottom: 10px; }
+.live-more {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0;
+  border: 0;
+  background: none;
+  color: var(--muted);
+  font: inherit;
+  font-size: 13px;
+  cursor: pointer;
+}
+.live-more:hover { color: var(--text); }
+.live-more i { font-size: 11px; }
+.live-more[aria-expanded='true'] { margin-bottom: 12px; }
