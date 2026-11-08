@@ -1,0 +1,197 @@
+I want a better integration with auth0. Get some suggestions?
+
+---
+
+wb an account system
+
+---
+
+do 1
+
+---
+
+git pull and then push
+
+---
+
+where is the uploaded by on prod?
+
+---
+
+deploy!
+
+---
+
+Can you make the case content width the same as the home page?
+
+---
+
+push and deploy
+
+---
+
+Can you try re-arranging the case page? place more emphasis on the geolocation - that is our main selling point and "scare factor". Rest of the features are good but they take more of a side role.
+
+---
+
+<task-notification>
+<task-id>bacxx44hi</task-id>
+<tool-use-id>toolu_01QUnFLMPt74YVRRxHUcUC7w</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-relesto-Downloads-earwitness/75eefe2d-fa7e-4fb1-bf1e-e30d2d8edccc/tasks/bacxx44hi.output</output-file>
+<status>failed</status>
+<summary>Background command "Start Vite dev server for mock preview" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+push
+
+---
+
+deploy
+
+---
+
+[Image #1] i really dont like this red gradient. and the whole thing is too tall.
+
+---
+
+also merge the latest pr and handle the merge conflicts.
+
+---
+
+can you add a cooler loading phase for a case? show the step with clear name so its clear the computa is thinking.
+
+---
+
+also now merge the pr
+
+---
+
+push and deploy
+
+---
+
+im trying to upload IMG_2799.MOV from downloads but file size too big. can you lower the res
+
+---
+
+[Image #2] can you remove this weird side colour. [Image #3] this font doesnt fit. Please keep to the original RealistikOsu-inspired style.
+
+---
+
+push and commit
+
+---
+
+deploy
+
+---
+
+[Image #4] these dropdowns ar ereally out of place. make them a separate bar downstairs
+
+---
+
+push and deploy
+
+---
+
+[Image #5] names dont fit. just pfp is okay
+
+---
+
+push and deploy
+
+---
+
+How can I optimise analysis?
+
+---
+
+do 1, commit and push and deploy
+
+---
+
+how can i improve the search on the main feed?
+
+---
+
+how can i improve the search on the main feed? dont make any changes yourself
+
+---
+
+do 1.
+
+---
+
+commit push deploy
+
+---
+
+also what is going on in ai/? i didnt add it
+
+---
+
+discard them
+
+---
+
+[Image #6] can you make this one simpler, but then have a dropdown/btn that reveals the rest of the info? Also allow pasting images here [Image #7]
+
+---
+
+commit push deploy
+
+---
+
+can you explain the pr thats coming in
+
+---
+
+btw can you backup prod (on teh same machine, including sql backup and all data?)
+
+---
+
+as in keep the files on prod server
+
+---
+
+check for a new pr (not the terraform one), merge and deploy
+
+---
+
+Design an "Effort" setting, where we can have more complex processing on request, or lighter one. The current level should be considered "medium". Add more things for the higher effort ones (we can tolerate longer waiting times) eg stars/sun and anything else you can think of. Screenshots should still attempt to run these. Low effort should be quicker. Effort level should be recorded with each case (and changable during re-calculations). Be creative with your methods, right now we don't do well in rural areas on areas with no text! If you want a free api to use, tell and i can prob register for you
+
+---
+
+would this be useful https://overpass-turbo.eu/
+
+---
+
+<task-notification>
+<task-id>bprvtycgc</task-id>
+<tool-use-id>toolu_01XYaJZotssrh5PG5U4ekGcr</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-relesto-Downloads-earwitness/75eefe2d-fa7e-4fb1-bf1e-e30d2d8edccc/tasks/bprvtycgc.output</output-file>
+<status>completed</status>
+<summary>Background command "Run the full pytest suite" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+Mapillary was already set in .env, nova.astronometry.net login is actually broken, is it possible to replace it?
+
+---
+
+commit push deploy
+
+---
+
+continue misclick
+
+---
+
+[Image #8] where is the selector? Ideally id want a cool chatgpt-style slider here
+
+---
+
+commit push deploy
