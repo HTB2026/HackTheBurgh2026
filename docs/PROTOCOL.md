@@ -8,9 +8,9 @@ built SPA (`web/dist`) is served by the same server at `/`. In dev, Vite proxies
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
-| GET | `/api/health` | | `{ok, openai: bool, ai: {providers: ["openai"\|"gemini"], default}, modules: [{name,title,description}]}` |
+| GET | `/api/health` | | `{ok, openai: bool, ai: {providers: ["openai"\|"gemini"\|"ollama"], default}, modules: [{name,title,description}]}` |
 | GET | `/api/cases` | | `[CaseSummary]`, newest first (includes `verdict`, `summary_plain` once the brief exists) |
-| POST | `/api/cases` | multipart `file`; optional query `approx_time` (ISO), `search_hours`, `ai_provider` (`openai`\|`gemini`, must be in `health.ai.providers`, else 400) | `CaseSummary` (analysis starts immediately) |
+| POST | `/api/cases` | multipart `file`; optional query `approx_time` (ISO), `search_hours`, `ai_provider` (`openai`\|`gemini`\|`ollama`, must be in `health.ai.providers`, else 400) | `CaseSummary` (analysis starts immediately) |
 | POST | `/api/cases/from-path` | JSON `{path, options?}` (a file on the server machine; `options.ai_provider` as for upload) | `CaseSummary` |
 | GET | `/api/cases/{id}` | | `{summary: CaseSummary, events: [Event]}` (full replay) |
 | DELETE | `/api/cases/{id}` | | `{deleted}` |

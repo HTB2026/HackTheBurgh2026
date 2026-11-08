@@ -1,6 +1,13 @@
 import type { AiProvider, Health } from '../lib/types'
 
-export const AI_LABEL: Record<AiProvider, string> = { openai: 'OpenAI', gemini: 'Gemini' }
+export const AI_LABEL: Record<AiProvider, string> = { openai: 'OpenAI', gemini: 'Gemini', ollama: 'Gemma' }
+
+/** One-line hint per provider, shown on hover. */
+export const AI_HINT: Record<AiProvider, string> = {
+  openai: 'OpenAI (cloud): two speech models cross-check the transcript.',
+  gemini: 'Google Gemini (cloud): two Gemini models cross-check the transcript. The free tier allows only a few cases a day.',
+  ollama: 'Gemma 4 on your own server (Ollama): nothing leaves your infrastructure. Slower, and the transcript has a single reading.',
+}
 
 /** The AI providers a case can pick on this server (only worth showing when there are two or more). */
 export const aiChoices = (health: Health | null): AiProvider[] => health?.ai?.providers ?? []
@@ -29,7 +36,7 @@ export function AiPicker({
       data-tip={compact ? 'AI model used when this case is run again' : undefined}
     >
       {choices.map((p) => (
-        <option key={p} value={p}>
+        <option key={p} value={p} title={AI_HINT[p]}>
           {AI_LABEL[p] ?? p}
         </option>
       ))}

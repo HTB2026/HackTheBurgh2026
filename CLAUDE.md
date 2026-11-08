@@ -27,7 +27,7 @@ bash scripts/deploy.sh                    # rsync + remote_setup.sh to the serve
 
 Tests set `EARWITNESS_OFFLINE=1` and pop `OPENAI_API_KEY`, `GEMINI_API_KEY` and `GOOGLE_API_KEY`; note that `earwitness.db` calls `load_dotenv(.env)` at import, so pop the keys *after* importing `earwitness.server.jobs` in ad-hoc scripts, or AI modules will run.
 
-AI calls go through `earwitness.ai`: modules call `ai.for_case(ctx.options)` (the case's `ai_provider`, else the server default) and use its `structured` / `transcribe` / `listen`. `ai/openai.py` and `ai/gemini.py` share that interface; modules build content in the neutral `input_text` / `input_image` (data URL) format, and the Gemini provider converts it. Never import a provider directly from a module.
+AI calls go through `earwitness.ai`: modules call `ai.for_case(ctx.options)` (the case's `ai_provider`, else the server default) and use its `structured` / `transcribe` / `listen`. `ai/openai.py`, `ai/gemini.py` and `ai/ollama.py` share that interface (Ollama has a single model, so its transcript `check` pass raises and the transcript reports one reading); modules build content in the neutral `input_text` / `input_image` (data URL) format, and the Gemini provider converts it. Never import a provider directly from a module.
 
 ## Architecture
 

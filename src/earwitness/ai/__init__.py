@@ -22,11 +22,12 @@ from types import ModuleType
 from typing import Any
 
 from earwitness.ai import gemini
+from earwitness.ai import ollama
 from earwitness.ai import openai
 
-PROVIDERS: dict[str, ModuleType] = {"openai": openai, "gemini": gemini}
-LABELS = {"openai": "OpenAI", "gemini": "Gemini"}
-MISSING_KEY = "set OPENAI_API_KEY or GEMINI_API_KEY to enable"
+PROVIDERS: dict[str, ModuleType] = {"openai": openai, "gemini": gemini, "ollama": ollama}
+LABELS = {"openai": "OpenAI", "gemini": "Gemini", "ollama": "Gemma"}
+MISSING_KEY = "set OPENAI_API_KEY, GEMINI_API_KEY or EARWITNESS_OLLAMA_URL to enable"
 
 
 def available() -> list[str]:
@@ -54,3 +55,4 @@ def for_case(options: dict[str, Any] | None) -> ModuleType | None:
     name = choice(options)
 
     return PROVIDERS[name] if name else None
+
