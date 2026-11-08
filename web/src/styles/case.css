@@ -1252,6 +1252,9 @@ td.lb-title > * {
 .leaflet-container {
   font-family: 'DM Sans', sans-serif !important;
   background: #0e0e0e !important;
+  /* Leaflet's panes and controls use z-index 400-1000; keep them inside the map so it
+     scrolls under the sticky header (z-index 30) instead of over it. */
+  isolation: isolate;
 }
 .leaflet-popup-content-wrapper,
 .leaflet-popup-tip {
