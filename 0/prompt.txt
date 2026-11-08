@@ -1,0 +1,29 @@
+I want a better integration with auth0. Get some suggestions?
+
+---
+
+wb an account system
+
+---
+
+do 1
+
+---
+
+git pull and then push
+
+---
+
+where is the uploaded by on prod?
+
+---
+
+deploy!
+
+---
+
+Can you make the case content width the same as the home page?
+
+---
+
+push and deploy
