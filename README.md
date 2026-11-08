@@ -43,7 +43,9 @@ the initial load. Mock mode is only available in the Vite development server.
 Optional extras, configured in `.env` (gitignored):
 
 ```sh
-OPENAI_API_KEY=sk-...          # transcript, AI visual analyst, narrative brief, geolocation judge
+OPENAI_API_KEY=sk-...          # AI checks: transcript, sounds, visual analyst, brief, geolocation
+GEMINI_API_KEY=...             # the same AI checks on Gemini (set one key, or both)
+EARWITNESS_AI_PROVIDER=gemini  # optional: provider for cases that don't pick one
 EARWITNESS_GEOSLEUTH=~/.cache/earwitness/vendor/geo-sleuth/skills/geo-sleuth
 ```
 
@@ -52,8 +54,13 @@ For geolocation, clone https://github.com/Oldcircle/geo-sleuth (MIT) and point
 local intake (edge crops + OCR, no reverse image search), then a vision model
 estimates the location **blind**, without the file's GPS. When GPS exists, the
 error in km is reported. The key is read from the environment only and never
-reaches the browser. Frames and audio are sent to OpenAI only when the key is
-set.
+reaches the browser. Frames and audio are sent to the AI provider only when its
+key is set.
+
+With both keys set, each case picks its AI provider: "AI model" under **More
+options** when uploading, or the picker next to **Rerun** on a case (the API
+takes `ai_provider=openai|gemini` on upload and rerun). Answers are cached per
+case and provider (`openai-cache/`, `gemini-cache/`), so switching back is free.
 
 ## Database (Tiger Data)
 
@@ -147,7 +154,7 @@ copies, a screenshot) raise no edit verdict.
 | **Pixel forensics** | Copy-move (cloned) regions; error-level and noise-residual heatmaps | ORB self-matching with displacement clustering; ELA; regression-normalised residuals |
 | **A/V sync** | Audio shifted or re-dubbed against the picture | onset envelope × motion energy cross-correlation, checked for consistency across the clip |
 | **OCR** | Postcodes, number plates, phone numbers, URLs, dates, clock times in frame | Tesseract, two layout passes |
-| **Transcript** / **AI analyst** | Speech; place, time of day, notable details and visual manipulation signs (labelled AI-inferred) | OpenAI (optional) |
+| **Transcript** / **AI analyst** | Speech; place, time of day, notable details and visual manipulation signs (labelled AI-inferred) | OpenAI or Gemini (optional) |
 | **Geo-sleuth intake** | geo-sleuth intake dossier for the sharpest frames | optional bridge; set `EARWITNESS_GEOSLEUTH` |
 | **Case brief** | Verdict (EDITED / POSSIBLY EDITED / NO SIGNS OF EDITING) with WHEN / WHERE / DEVICE / PEOPLE / INTEGRITY / HIDDEN lines citing finding ids; flags edits **corroborated** by sound and picture | deterministic rules; plus an AI narrative if enabled |
 

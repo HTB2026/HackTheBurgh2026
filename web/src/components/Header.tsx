@@ -1,6 +1,7 @@
 import { useAuth } from '../lib/auth'
 import { useHealth } from '../lib/health'
 import { Icon } from './ui/ui'
+import { AI_LABEL } from './AiPicker'
 
 export function Wordmark() {
   return (
@@ -41,18 +42,26 @@ export function Header({ route }: { route: string }) {
               <i className="status-dot" /> Server offline
             </span>
           ) : (
-            health && route !== 'case' && (
-              <span
-                className={`status-pill ${health.openai ? 'c-purple' : 'c-grey'}`}
-                data-tip={
-                  health.openai
-                    ? 'AI checks are on: speech, the AI eyewitness and location-from-pixels run, and their results are labelled AI.'
-                    : 'AI checks are off. Every result comes from measured checks only.'
-                }
-              >
-                <Icon name="robot" /> AI {health.openai ? 'on' : 'off'}
-              </span>
-            )
+            health &&
+            route !== 'case' &&
+            (() => {
+              const providers = health.ai?.providers ?? (health.openai ? (['openai'] as const) : [])
+              const on = providers.length > 0
+              const names = providers.map((p) => AI_LABEL[p] ?? p).join(' / ')
+              return (
+                <span
+                  className={`status-pill ${on ? 'c-purple' : 'c-grey'}`}
+                  data-tip={
+                    on
+                      ? `AI checks are on (${names}): speech, the AI eyewitness and location-from-pixels run, and their results are labelled AI.` +
+                        (providers.length > 1 ? ' Pick the model per case under More options, or next to Rerun.' : '')
+                      : 'AI checks are off. Every result comes from measured checks only.'
+                  }
+                >
+                  <Icon name="robot" /> AI {on ? names : 'off'}
+                </span>
+              )
+            })()
           )}
           {health && route !== 'case' && (
             <span className="status-pill c-green" data-tip={`${health.modules.length} checks run on every video, ${health.image_modules?.length ?? 0} on every photo`}>

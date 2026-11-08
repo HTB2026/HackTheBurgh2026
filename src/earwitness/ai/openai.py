@@ -1,4 +1,4 @@
-"""Thin OpenAI wrapper: key from the environment only, per-case caching, model fallback."""
+"""OpenAI provider: key from the environment only, per-case caching, model fallback."""
 
 import hashlib
 import json
@@ -104,11 +104,16 @@ async def structured(
     raise RuntimeError(f"no OpenAI model available: {last_error}")
 
 
+_TRANSCRIBE_MODELS = {"primary": "whisper-1", "check": "gpt-4o-transcribe"}
+
+
 async def transcribe(
-    workdir: str, audio_path: str, model: str = "whisper-1"
+    workdir: str, audio_path: str, pass_: str = "primary"
 ) -> dict[str, Any]:
-    """Speech to text. whisper-1 gives timed segments and a language guess;
-    newer models (gpt-4o-transcribe) give text only."""
+    """Speech to text. The primary pass (whisper-1) gives timed segments and a
+    language guess; the check pass (gpt-4o-transcribe) gives text only."""
+    model = _TRANSCRIBE_MODELS[pass_]
+
     with open(audio_path, "rb") as handle:
         digest = hashlib.sha1(handle.read()).hexdigest()
 
@@ -136,6 +141,7 @@ async def transcribe(
     result = (
         response.model_dump() if hasattr(response, "model_dump") else dict(response)
     )
+    result["model"] = model
 
     with open(path, "w") as handle:
         json.dump(result, handle, default=str)

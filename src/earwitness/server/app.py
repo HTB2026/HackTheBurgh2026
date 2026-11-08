@@ -21,6 +21,7 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 
+from earwitness import ai
 from earwitness import db
 from earwitness.modules import registry
 from earwitness.server import auth
@@ -66,6 +67,18 @@ def _when(text: str | None, name: str) -> datetime | None:
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
 
 
+def _ai_provider(name: str) -> str:
+    """A provider a case may ask for: one whose API key this server has."""
+    name = name.strip().lower()
+
+    if name not in ai.available():
+        raise HTTPException(
+            400, f"AI provider {name!r} is not available here (have: {ai.available()})"
+        )
+
+    return name
+
+
 class PathCase(BaseModel):
     path: str
     options: dict[str, Any] = {}
@@ -99,6 +112,7 @@ async def health() -> dict[str, Any]:
     return {
         "ok": True,
         "openai": bool(os.environ.get("OPENAI_API_KEY")),
+        "ai": {"providers": ai.available(), "default": ai.default()},
         "database": await db.health(),
         "auth": auth.public_config(),
         "modules": describe("video"),
@@ -118,9 +132,13 @@ async def upload(
     file: UploadFile,
     approx_time: str | None = None,
     search_hours: float | None = None,
+    ai_provider: str | None = None,
     user: auth.User = Depends(auth.require_user),
 ) -> dict[str, Any]:
     options: dict[str, Any] = {"original_name": file.filename, "uploaded_by": user.sub}
+
+    if ai_provider:
+        options["ai_provider"] = _ai_provider(ai_provider)
 
     if approx_time:
         options["approx_time"] = approx_time
@@ -153,6 +171,9 @@ async def from_path(
         **request.options,
         "uploaded_by": user.sub,
     }
+
+    if options.get("ai_provider"):
+        options["ai_provider"] = _ai_provider(str(options["ai_provider"]))
     # A grid record saved next to the evidence is used automatically.
     sibling = os.path.join(os.path.dirname(path), "grid.csv")
 
@@ -232,12 +253,17 @@ async def grid_minutes(start: str, end: str) -> list[dict[str, Any]]:
 async def rerun(
     case_id: str,
     modules: list[str] | None = None,
+    ai_provider: str | None = None,
     _: auth.User = Depends(auth.require_user),
 ) -> dict[str, Any]:
     case = _case(case_id)
 
     if case.task and not case.task.done():
         raise HTTPException(409, "already running")
+
+    if ai_provider and ai_provider != case.options.get("ai_provider"):
+        case.options["ai_provider"] = _ai_provider(ai_provider)
+        store.save_meta(case)
 
     case.events.clear()
 

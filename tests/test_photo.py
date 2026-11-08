@@ -11,13 +11,17 @@ from earwitness import demo_photo
 from earwitness.server.jobs import CaseStore
 
 os.environ["EARWITNESS_OFFLINE"] = "1"
-os.environ.pop("OPENAI_API_KEY", None)
+AI_KEYS = ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY")
+
+for _key in AI_KEYS:
+    os.environ.pop(_key, None)
 
 
 def run(
     tmp_path, path: str, modules: list[str] | None = None
 ) -> tuple[list[dict], dict]:
-    os.environ.pop("OPENAI_API_KEY", None)
+    for key in AI_KEYS:
+        os.environ.pop(key, None)
 
     async def go():
         store = CaseStore(str(tmp_path / "cases"))

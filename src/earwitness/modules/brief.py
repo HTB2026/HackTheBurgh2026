@@ -1,7 +1,7 @@
 """The case summary: WHEN / WHERE / WHO / INTEGRITY / HIDDEN.
 
 Always produced locally from the measured findings with explicit rules, so the
-verdict is reproducible. With an OpenAI key, a language model also writes a
+verdict is reproducible. With an AI key (OpenAI or Gemini), a language model also writes a
 short narrative brief that must cite finding IDs.
 """
 
@@ -11,7 +11,7 @@ from datetime import datetime
 from datetime import timedelta
 from typing import Any
 
-from earwitness import openai_client
+from earwitness import ai
 from earwitness.modules.base import CaseContext
 from earwitness.modules.base import Finding
 from earwitness.modules.base import Reporter
@@ -1502,7 +1502,9 @@ class Brief:
         )
         data["summary_plain"] = _summary_plain(data["answers"])
 
-        if openai_client.enabled() and findings:
+        provider = ai.for_case(ctx.options)
+
+        if provider is not None and findings:
             out.progress(0.4, "drafting narrative")
             evidence = [
                 {"id": f.id, "module": f.module, "severity": f.severity, "kind": f.kind,
@@ -1511,7 +1513,7 @@ class Brief:
             ]  # fmt: skip
 
             try:
-                narrative = await openai_client.structured(
+                narrative = await provider.structured(
                     ctx.workdir,
                     instructions=(
                         f"You write the summary of a {noun}-forensics case file for a non-expert. Use ONLY "
@@ -1535,11 +1537,11 @@ class Brief:
 
         out.artifact("brief", "brief", "Case brief", data=data)
 
-        if openai_client.enabled() and findings:
+        if provider is not None and findings:
             out.progress(0.7, "writing the dossier")
 
             try:
-                dossier = await openai_client.structured(
+                dossier = await provider.structured(
                     ctx.workdir,
                     instructions=_DOSSIER.replace("this video", f"this {noun}").replace(
                         "filmed it", "took it" if still else "filmed it"

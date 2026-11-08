@@ -12,7 +12,8 @@ from earwitness import demo as fixtures
 from earwitness.server.jobs import CaseStore
 
 os.environ["EARWITNESS_OFFLINE"] = "1"
-os.environ.pop("OPENAI_API_KEY", None)
+for _key in ("OPENAI_API_KEY", "GEMINI_API_KEY", "GOOGLE_API_KEY"):
+    os.environ.pop(_key, None)
 
 
 def run(tmp_path, video: str, modules: list[str], **options) -> list[dict]:

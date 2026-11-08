@@ -12,6 +12,7 @@ from typing import Any
 
 import psycopg
 
+from earwitness import ai
 from earwitness import db
 from earwitness.modules import registry
 from earwitness.modules.base import CaseContext
@@ -84,6 +85,7 @@ class Case:
             "summary_plain": brief.get("summary_plain"),
             "place": where["answer"] if located else None,
             "place_confidence": where["confidence"] if located else None,
+            "ai_provider": self.options.get("ai_provider"),
         }
 
 
@@ -122,8 +124,14 @@ class CaseStore:
         workdir = os.path.join(self.root, case_id)
         os.makedirs(workdir)
         case = Case(case_id, workdir, os.path.basename(filename), options or {})
+        self.save_meta(case)
+        self.cases[case_id] = case
 
-        with open(os.path.join(workdir, "case.json"), "w") as handle:
+        return case
+
+    def save_meta(self, case: Case) -> None:
+        """Write case.json (filename, creation time, options) for restarts."""
+        with open(os.path.join(case.workdir, "case.json"), "w") as handle:
             json.dump(
                 {
                     "filename": case.filename,
@@ -132,10 +140,6 @@ class CaseStore:
                 },
                 handle,
             )
-
-        self.cases[case_id] = case
-
-        return case
 
     def delete(self, case_id: str) -> bool:
         case = self.cases.pop(case_id, None)
@@ -365,6 +369,8 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
                 "id": case.id,
                 "filename": case.filename,
                 "kind": kind,
+                # The AI provider this run uses (None: no AI key on the server).
+                "ai_provider": ai.choice(case.options),
                 "duration_s": float(probe.get("format", {}).get("duration") or 0),
                 "size_bytes": int(
                     probe.get("format", {}).get("size")

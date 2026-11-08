@@ -1065,3 +1065,13 @@ a[data-tip],
 .card-meta .hot i {
   color: var(--orange-t);
 }
+
+/* AI model picker (Landing "More options" and next to Rerun) */
+.ai-picker {
+  cursor: pointer;
+}
+.ai-picker.sm {
+  padding: 3px 6px;
+  font-size: 12px;
+  align-self: center;
+}

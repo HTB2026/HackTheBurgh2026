@@ -9,7 +9,9 @@ import { useHealth } from '../../lib/health'
 import { mediaNoun, modulePlain, VERDICT } from '../../lib/plain'
 import type { CaseState } from '../../lib/state'
 import { boxOf, type Finding, type Artifact } from '../../lib/types'
-import { Icon, SourceChip } from '../ui/ui'
+import { Alert, Icon, SourceChip } from '../ui/ui'
+import { AI_LABEL, AiPicker } from '../AiPicker'
+import type { AiProvider } from '../../lib/types'
 import { DataView } from '../ui/Data'
 import { Player } from './Player'
 import { PhotoStage } from './PhotoStage'
@@ -98,7 +100,9 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   const pb = useMemo(() => new Playback(), [])
   const rf = useMemo(() => new RegionFocus(), [])
   const { health } = useHealth()
-  const facts = useMemo(() => deriveFacts(state, health?.openai ?? null), [state, health?.openai])
+  const aiOn = health ? (health.ai ? health.ai.providers.length > 0 : health.openai) : null
+  const facts = useMemo(() => deriveFacts(state, aiOn), [state, aiOn])
+  const [aiProvider, setAiProvider] = useState<AiProvider | null>(null)
   const [technical, setTechnical] = useState(false)
   const [tab, setTab] = useState<Tab>('findings')
   const [focus, setFocus] = useState<string | null>(null)
@@ -136,7 +140,8 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
       {dossier && <button className="icon-btn" onClick={() => setRevealing(true)} aria-label="Open presentation" data-tip="Presentation"><Icon name="eye" /></button>}
       <a className="icon-btn" href={api.reportUrl(caseId)} target="_blank" rel="noreferrer" aria-label="Report" data-tip="Printable report"><Icon name="file-lines" /></a>
       {info?.original_url && <a className="icon-btn" href={info.original_url} target="_blank" rel="noreferrer" aria-label="Original file" data-tip="Original file"><Icon name="download" /></a>}
-      <button className="icon-btn" onClick={async () => { await api.rerun(caseId); setNonce((n) => n + 1) }} disabled={facts.running} aria-label="Rerun" data-tip="Run checks again"><Icon name="rotate-right" /></button>
+      <AiPicker health={health} value={aiProvider ?? info?.ai_provider ?? null} onChange={setAiProvider} compact />
+      <button className="icon-btn" onClick={async () => { await api.rerun(caseId, aiProvider); setNonce((n) => n + 1) }} disabled={facts.running} aria-label="Rerun" data-tip={aiProvider && aiProvider !== info?.ai_provider ? `Run checks again with ${AI_LABEL[aiProvider]}` : 'Run checks again'}><Icon name="rotate-right" /></button>
     </div></div></section>
     <main className="wrap case-page">{state.error ? <p className="err-line">This case could not be opened: {state.error}</p> : !info ? <div className="skeleton" aria-label="Loading the case"><span /><span /><span className="tall" /></div> : <>
       <VerdictLine state={state} facts={facts} conn={conn} incomplete={incomplete} />
@@ -165,5 +170,8 @@ function VerdictLine({ state, facts, conn, incomplete }: { state: CaseState; fac
     return <section className="verdict-block"><p className="verdict-line">Analysing · {phrase}… {facts.checksDone} of {facts.checksTotal} checks</p></section>
   }
   const unfinished = state.moduleOrder.filter((n) => ['queued', 'waiting', 'running'].includes(state.modules[n]?.status)).length
-  return <section className="verdict-block"><p className="verdict-line">{!(facts.summary ?? VERDICT[facts.verdict].line).toLowerCase().startsWith(VERDICT[facts.verdict].word.toLowerCase()) && <b className={`v-${facts.verdict}`}>{VERDICT[facts.verdict].word}</b>} <span>{facts.summary ?? VERDICT[facts.verdict].line}</span></p>{(incomplete > 0 || (unfinished > 0 && conn !== 'live')) && <p className="muted small">Coverage incomplete: {incomplete > 0 && `${incomplete} failed or skipped`}{incomplete > 0 && unfinished > 0 && conn !== 'live' && ' · '}{unfinished > 0 && conn !== 'live' && `${unfinished} unfinished`}</p>}</section>
+  const failed = state.moduleOrder.map((n) => state.modules[n]).filter((m) => m?.status === 'error')
+  // "RuntimeError: Gemini quota used up…" -> "Gemini quota used up…"; one line per distinct reason.
+  const reasons = [...new Set(failed.map((m) => { const r = (m.message || 'unknown error').replace(/^[A-Za-z]+(Error|Exception): /, ''); return r.length > 300 ? `${r.slice(0, 300)}…` : r }))]
+  return <section className="verdict-block"><p className="verdict-line">{!(facts.summary ?? VERDICT[facts.verdict].line).toLowerCase().startsWith(VERDICT[facts.verdict].word.toLowerCase()) && <b className={`v-${facts.verdict}`}>{VERDICT[facts.verdict].word}</b>} <span>{facts.summary ?? VERDICT[facts.verdict].line}</span></p>{(incomplete > 0 || (unfinished > 0 && conn !== 'live')) && <p className="muted small">Coverage incomplete: {incomplete > 0 && `${incomplete} failed or skipped`}{incomplete > 0 && unfinished > 0 && conn !== 'live' && ' · '}{unfinished > 0 && conn !== 'live' && `${unfinished} unfinished`}</p>}{failed.length > 0 && <Alert icon="triangle-exclamation" tone="red" title={`${failed.length === 1 ? 'This check' : 'These checks'} could not run: ${failed.map((m) => m.title).join(', ')}`}>{reasons.map((r) => <p key={r}>{r}</p>)}<p className="faint">The verdict above is based only on the checks that ran.</p></Alert>}</section>
 }

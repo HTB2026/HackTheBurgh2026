@@ -1876,3 +1876,9 @@ td.lb-title > * {
   .investigation .controls { flex-wrap: wrap; }
   .technical-panel { overflow-x: auto; }
 }
+.verdict-block .failed-count {
+  color: var(--red-t);
+}
+.verdict-block .alert {
+  margin-top: 10px;
+}

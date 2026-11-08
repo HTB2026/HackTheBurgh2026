@@ -8,13 +8,13 @@ built SPA (`web/dist`) is served by the same server at `/`. In dev, Vite proxies
 
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
-| GET | `/api/health` | | `{ok, openai: bool, modules: [{name,title,description}]}` |
-| GET | `/api/cases` | | `[CaseSummary]`, newest first (includes `verdict`, `summary_plain`, and `place` / `place_confidence` (the plain "where" answer, null when unknown) once the brief exists) |
-| POST | `/api/cases` | multipart `file`; optional query `approx_time` (ISO), `search_hours` | `CaseSummary` (analysis starts immediately) |
-| POST | `/api/cases/from-path` | JSON `{path, options?}` (a file on the server machine) | `CaseSummary` |
+| GET | `/api/health` | | `{ok, openai: bool, ai: {providers: ["openai"\|"gemini"], default}, modules: [{name,title,description}]}` |
+| GET | `/api/cases` | | `[CaseSummary]`, newest first (includes `verdict`, `summary_plain`, `ai_provider`, and `place` / `place_confidence` (the plain "where" answer, null when unknown) once the brief exists) |
+| POST | `/api/cases` | multipart `file`; optional query `approx_time` (ISO), `search_hours`, `ai_provider` (`openai`\|`gemini`, must be in `health.ai.providers`, else 400) | `CaseSummary` (analysis starts immediately) |
+| POST | `/api/cases/from-path` | JSON `{path, options?}` (a file on the server machine; `options.ai_provider` as for upload) | `CaseSummary` |
 | GET | `/api/cases/{id}` | | `{summary: CaseSummary, events: [Event]}` (full replay) |
 | DELETE | `/api/cases/{id}` | | `{deleted}` |
-| POST | `/api/cases/{id}/rerun` | | `CaseSummary` |
+| POST | `/api/cases/{id}/rerun` | optional query `ai_provider` (switches the case's provider and saves it) | `CaseSummary` |
 | GET | `/api/cases/{id}/files/{path}` | | artifact files (PNG/JPG/MP4); URLs arrive ready-made in events |
 | POST | `/api/cases/{id}/enhance` | JSON `{time_s, x, y, w, h, frames?}`; x,y,w,h are 0..1 fractions of the video frame | `{single_url, enhanced_url, frames_used, scale, source_px:[w,h], time_s}` |
 | GET | `/api/cases/{id}/report` | | printable HTML report (open in new tab) |
@@ -70,7 +70,7 @@ Browser-playable H.264 proxy of the evidence is ready (phones record HEVC/VP9):
   "id":"F007","module":"spectrum","severity":"info|notice|warning|critical",
   "title":"Keypad tones decoded: 1984#","detail":"…one or two sentences…",
   "time_s":4.0|null,"time_end_s":null,
-  "kind":"measured|inferred",          // inferred = AI (OpenAI) output, label it so
+  "kind":"measured|inferred",          // inferred = AI (OpenAI or Gemini) output, label it so
   "tags":["dtmf","audio"],              // e.g. splice, cut, location, gps, time, tone, ultrasonic, enf, face, pulse, text …
   "data":{…module-specific…}}}
 ```
@@ -96,7 +96,7 @@ An artifact with an id already seen replaces the old one. Kinds:
 | `video` | `url` MP4 (e.g. pulse colour magnification) | player |
 | `text` | `data {text}` | prose panel |
 | `json` | `data` = any JSON (e.g. `provenance:probe`, the raw ffprobe report) | collapsible tree |
-| `brief` | `data {verdict: "EDITED"\|"POSSIBLY EDITED"\|"NO SIGNS OF EDITING", bullets:[str], text, corroborated:bool, headline?, narrative?, next_steps?:[str], model?}`. Bullets start with WHEN:/WHERE:/DEVICE:/PEOPLE:/INTEGRITY:/HIDDEN:/CORROBORATED: and cite finding ids like `[F012]` (make those clickable → scroll to/highlight the finding). `headline`/`narrative` exist only when OpenAI is on (AI-inferred) | the ANALYST/verdict panel (id `brief:brief`) |
+| `brief` | `data {verdict: "EDITED"\|"POSSIBLY EDITED"\|"NO SIGNS OF EDITING", bullets:[str], text, corroborated:bool, headline?, narrative?, next_steps?:[str], model?}`. Bullets start with WHEN:/WHERE:/DEVICE:/PEOPLE:/INTEGRITY:/HIDDEN:/CORROBORATED: and cite finding ids like `[F012]` (make those clickable → scroll to/highlight the finding). `headline`/`narrative` exist only when an AI provider is on (AI-inferred) | the ANALYST/verdict panel (id `brief:brief`) |
 | `captions` | `data {segments:[{start,end,text}]}` | subtitles over the video at currentTime + transcript list |
 
 ### `log`
