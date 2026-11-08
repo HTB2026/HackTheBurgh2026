@@ -1,48 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, uploadEvidence } from '../lib/api'
-import { AI_HINT, AI_LABEL, aiChoices } from './AiPicker'
+import { useHealth } from '../lib/health'
+import { AiPicker, aiChoices } from './AiPicker'
 import type { AiProvider } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
 import { ago, dateShort, mmss } from '../lib/format'
 import { useCaseMeta } from '../lib/caseMeta'
-import { useHealth } from '../lib/health'
 import { VERDICT, verdictOf, type Verdict } from '../lib/plain'
 import { Alert, Empty, Icon, Redacted, SectionTitle } from './ui/ui'
-
-function toIso(local: string): string | null {
-  if (!local) return null
-  const d = new Date(local)
-  return isNaN(d.getTime()) ? null : d.toISOString()
-}
-
-/** Waveform silhouette along the hero's bottom edge. */
-function HeroWave({ peaks }: { peaks: number[] | null }) {
-  const pts = useMemo(() => {
-    const N = 240
-    if (peaks && peaks.length > 8) {
-      const max = Math.max(1e-6, ...peaks)
-      return Array.from({ length: N }, (_, i) => {
-        const a = Math.floor((i / N) * peaks.length)
-        const b = Math.max(a + 1, Math.floor(((i + 1) / N) * peaks.length))
-        let p = 0
-        for (let j = a; j < b; j++) p = Math.max(p, peaks[j] ?? 0)
-        return 0.12 + 0.88 * Math.sqrt(p / max)
-      })
-    }
-    // no case yet: a synthetic heartbeat-like trace
-    return Array.from({ length: N }, (_, i) => 0.18 + 0.12 * Math.sin(i / 5) + (i % 37 === 0 ? 0.6 : 0) + 0.08 * Math.sin(i * 1.7))
-  }, [peaks])
-  const H = 40
-  const W = 1000
-  const d = `M0 ${H} ` + pts.map((p, i) => `L${((i / (pts.length - 1)) * W).toFixed(1)} ${(H - p * H * 0.95).toFixed(1)}`).join(' ') + ` L${W} ${H} Z`
-  return (
-    <div className="hero-wave" aria-hidden>
-      <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none">
-        <path d={d} />
-      </svg>
-    </div>
-  )
-}
 
 function VerdictPill({ v }: { v: Verdict | undefined }) {
   const key = v ?? 'unknown'
@@ -68,7 +33,6 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
         <h4 title={c.filename}>
           <a href={`#/case/${c.id}`}>{c.filename}</a>
         </h4>
-        <p className="muted small mono">{c.id}</p>
         <p className={`card-place ${c.place ? `conf-${c.place_confidence}` : 'none'}`} data-tip={c.place ? `Where it was taken (${c.place_confidence} evidence)` : undefined}>
           <Icon name="location-dot" /> {c.place ?? (c.status === 'done' ? 'Location unknown' : 'Locating…')}
         </p>
@@ -85,12 +49,6 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
           ) : null}
           <span data-tip={`Examined ${dateShort(c.created)}`}>
             <Icon name="calendar" /> {ago(c.created)}
-          </span>
-          <span data-tip="Findings">
-            <Icon name="list" /> {c.findings}
-          </span>
-          <span className={c.warnings ? 'hot' : ''} data-tip="Flagged as warning or critical">
-            <Icon name="triangle-exclamation" /> {c.warnings}
           </span>
           <span className="grow" />
           <button
@@ -115,36 +73,24 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
 
 export function Landing({ examine }: { examine?: boolean }) {
   const { health } = useHealth()
+  const [aiProvider, setAiProvider] = useState<AiProvider | null>(() => {
+    try { return (localStorage.getItem('earwitness.ai') as AiProvider | null) ?? null } catch { return null }
+  })
+  const choices = aiChoices(health)
+  const aiChosen = aiProvider && choices.includes(aiProvider) ? aiProvider : (health?.ai?.default ?? null)
+  const pickAi = (provider: AiProvider) => {
+    setAiProvider(provider)
+    try { localStorage.setItem('earwitness.ai', provider) } catch { /* Private mode may block storage. */ }
+  }
   const [cases, setCases] = useState<CaseSummary[] | null>(null)
-  // Newer backends put the verdict in the list; only older cases (and the hero waveform) need their events fetched.
-  const needMeta = useMemo(() => (cases ? cases.filter((c, i) => i === 0 || c.verdict === undefined) : null), [cases])
+  // Older backends need their events fetched to determine the verdict.
+  const needMeta = useMemo(() => (cases ? cases.filter((c) => c.verdict === undefined) : null), [cases])
   const meta = useCaseMeta(needMeta)
   const verdictFor = (c: CaseSummary): Verdict | undefined =>
     c.status !== 'done' ? 'running' : c.verdict !== undefined ? (c.verdict ? verdictOf(c.verdict) : 'unknown') : meta[c.id]?.verdict
-  const [approx, setApprox] = useState('')
-  const [aiProvider, setAiProvider] = useState<AiProvider | null>(() => {
-    try {
-      return (localStorage.getItem('earwitness.ai') as AiProvider | null) ?? null
-    } catch {
-      return null
-    }
-  })
-  const choices = aiChoices(health)
-  // The stored choice only counts if this server still offers it.
-  const aiChosen = aiProvider && choices.includes(aiProvider) ? aiProvider : (health?.ai?.default ?? null)
-  const pickAi = (p: AiProvider) => {
-    setAiProvider(p)
-    try {
-      localStorage.setItem('earwitness.ai', p)
-    } catch {
-      /* private mode: the choice just isn't remembered */
-    }
-  }
-  const [path, setPath] = useState('')
   const [over, setOver] = useState(false)
   const [upload, setUpload] = useState<{ name: string; p: number } | null>(null)
   const [err, setErr] = useState<string | null>(null)
-  const [busy, setBusy] = useState(false)
   const fileInput = useRef<HTMLInputElement>(null)
   const dropRef = useRef<HTMLDivElement>(null)
 
@@ -163,14 +109,14 @@ export function Landing({ examine }: { examine?: boolean }) {
       setErr(null)
       setUpload({ name: file.name, p: 0 })
       try {
-        const s = await uploadEvidence(file, toIso(approx), aiChosen, (p) => setUpload({ name: file.name, p }))
+        const s = await uploadEvidence(file, null, aiChosen, (p) => setUpload({ name: file.name, p }))
         location.hash = `#/case/${s.id}`
       } catch (e) {
         setErr(String((e as Error).message ?? e))
         setUpload(null)
       }
     },
-    [approx, aiChosen],
+    [aiChosen],
   )
 
   // the whole page accepts a dropped file
@@ -206,40 +152,18 @@ export function Landing({ examine }: { examine?: boolean }) {
     return () => clearTimeout(t)
   }, [examine])
 
-  const openPath = async () => {
-    if (!path.trim()) return
-    setErr(null)
-    setBusy(true)
-    try {
-      const iso = toIso(approx)
-      const s = await api.fromPath(path.trim(), { ...(iso ? { approx_time: iso } : {}), ...(aiChosen ? { ai_provider: aiChosen } : {}) })
-      location.hash = `#/case/${s.id}`
-    } catch (e) {
-      setErr(`Could not open ${path.trim()}: ${(e as Error).message}`)
-    } finally {
-      setBusy(false)
-    }
-  }
-
   const remove = async (c: CaseSummary) => {
     if (!confirm(`Delete the case for ${c.filename}? Its copy of the file and all results are removed. This cannot be undone.`)) return
     await api.remove(c.id).catch(() => null)
     refresh()
   }
 
-  const latest = cases?.[0]
-  const latestPeaks = latest ? (meta[latest.id]?.peaks ?? null) : null
-  const known = cases ? cases.map(verdictFor).filter(Boolean) : []
-  const edits = known.filter((v) => v === 'edited').length
-  const suspect = known.filter((v) => v === 'possible').length
-  const located = cases ? cases.filter((c) => c.place).length : 0
-
   return (
     <main className="wrap home-page">
       {over && (
         <div className="drop-overlay">
           <Icon name="file-video" />
-          <b>Drop to locate</b>
+          <b>Drop to examine</b>
         </div>
       )}
       <input
@@ -254,89 +178,26 @@ export function Landing({ examine }: { examine?: boolean }) {
         }}
       />
 
-      <section className="hero" style={latest?.case?.thumb_url ? { backgroundImage: `url(${latest.case.thumb_url})` } : undefined}>
-        <div className="hero-inner">
-          <div className="hero-text">
-            <h1>Find where any photo or video was taken.</h1>
-            <p>
-              Drop in a photo or video. We work out the location from GPS, street signs, landmarks and scenery, and check it against reference and satellite
-              photos. We also check when it was taken and whether it was edited or made by AI.
-            </p>
-            <div className="hero-actions">
-              <button className="btn btn-red" onClick={() => fileInput.current?.click()} disabled={!!upload}>
-                <Icon name="location-crosshairs" /> Locate a photo or video
-              </button>
-              <a className="btn dark" href="#/how">
-                <Icon name="circle-question" /> How it works
-              </a>
-            </div>
-          </div>
-        </div>
-        {latest && (
-          <span className="hero-last">
-            Last examined {ago(latest.created)}: <b>{latest.filename}</b>
-          </span>
-        )}
-        <HeroWave peaks={latestPeaks} />
+      <section className="home-intro">
+        <h1>Every photo and video is a witness.</h1>
+        <p>Drop in a video or photograph to examine what it can reveal.</p>
       </section>
-      <div className="counters">
-        <div className="c-blue" data-tip="Every video examined on this machine">
-          <Icon name="folder-open" />
-          <b>{cases ? cases.length : '…'}</b>
-          Cases examined
-        </div>
-        <div className="c-green" data-tip="Cases where GPS, a caption or the picture itself narrowed down the location">
-          <Icon name="location-dot" />
-          <b>{cases ? located : '…'}</b>
-          Places found
-        </div>
-        <div className="c-red" data-tip="Cases whose verdict is Edited (independent checks agree)">
-          <Icon name="scissors" />
-          <b>
-            {cases ? edits : '…'}
-            {suspect ? <small> + {suspect} suspect</small> : null}
-          </b>
-          Edits caught
-        </div>
-
-      </div>
-
       <div className="home">
         <div className="home-main">
-          <SectionTitle icon="location-crosshairs" accent="red" small="A photo (JPEG, HEIC, PNG, WebP, TIFF) or a video. Checks start straight away.">
-            Locate a photo or video
-          </SectionTitle>
-          {choices.length > 1 && (
-            <div className="ai-choice" role="radiogroup" aria-label="AI model">
-              <span className="ai-choice-label">
-                <Icon name="robot" /> AI model
-              </span>
-              <div className="tabs ai-tabs">
-                {choices.map((p) => (
-                  <button
-                    key={p}
-                    type="button"
-                    role="radio"
-                    aria-checked={aiChosen === p}
-                    className={aiChosen === p ? 'active' : ''}
-                    disabled={!!upload}
-                    data-tip={AI_HINT[p]}
-                    onClick={() => pickAi(p)}
-                  >
-                    {AI_LABEL[p] ?? p}
-                  </button>
-                ))}
-              </div>
-              <small className="faint">Runs speech, sounds, the visual analyst, geolocation and the written summary.</small>
-            </div>
-          )}
+          <AiPicker health={health} value={aiChosen} onChange={pickAi} />
           <div
             ref={dropRef}
             className={`dropzone ${upload ? 'busy' : ''}`}
             role="button"
             tabIndex={0}
             onClick={() => !upload && fileInput.current?.click()}
-            onKeyDown={(e) => (e.key === 'Enter' || e.key === ' ') && fileInput.current?.click()}
+            aria-disabled={!!upload}
+            onKeyDown={(e) => {
+              if (!upload && (e.key === 'Enter' || e.key === ' ')) {
+                e.preventDefault()
+                fileInput.current?.click()
+              }
+            }}
           >
             {upload ? (
               <div className="upload">
@@ -357,28 +218,6 @@ export function Landing({ examine }: { examine?: boolean }) {
               </>
             )}
           </div>
-          <details className="more-options">
-            <summary>
-              <Icon name="sliders" /> More options: approximate date, open a file already on this computer
-            </summary>
-            <div className="options-grid">
-              <label>
-                <span>Roughly when was it filmed? (optional)</span>
-                <input className="input" type="datetime-local" step="60" value={approx} onChange={(e) => setApprox(e.target.value)} />
-                <small className="faint">Helps the power-grid check search the right days. Your local time zone.</small>
-              </label>
-              <label>
-                <span>Path to a file on the server</span>
-                <div className="row">
-                  <input className="input" placeholder="/Users/…/IMG_6335.MOV" value={path} onChange={(e) => setPath(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && openPath()} />
-                  <button className="btn btn-blue sm" disabled={!path.trim() || busy} onClick={openPath}>
-                    {busy ? 'Opening…' : 'Examine'}
-                  </button>
-                </div>
-                <small className="faint">For large files: no upload needed.</small>
-              </label>
-            </div>
-          </details>
           {err && (
             <Alert icon="triangle-exclamation" tone="red" title="That did not work">
               {err}
@@ -400,7 +239,7 @@ export function Landing({ examine }: { examine?: boolean }) {
               ))}
             </div>
           ) : cases.length === 0 ? (
-            <Empty icon="folder-open">No cases yet. Drop in a photo or video to find where it was taken.</Empty>
+            <Empty icon="folder-open">No cases yet. Examine a video or photo to open the first file.</Empty>
           ) : (
             <div className="cards">
               {cases.map((c) => (

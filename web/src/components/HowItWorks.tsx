@@ -1,6 +1,6 @@
 import { useHealth } from '../lib/health'
-import { CONFIDENCE, modulePlain, SEVERITY, VERDICT } from '../lib/plain'
-import { Alert, ConfBar, Icon, Redacted, SectionTitle, SevChip } from './ui/ui'
+import { modulePlain, VERDICT } from '../lib/plain'
+import { Alert, Icon, Redacted, SectionTitle } from './ui/ui'
 
 export function HowItWorks() {
   const { health } = useHealth()
@@ -31,7 +31,6 @@ export function HowItWorks() {
                 <header>
                   <Icon name={p.icon} />
                   <h3>{p.name}</h3>
-                  <small className="mono faint">{m.title}</small>
                 </header>
                 <p>{p.does}</p>
                 {p.reveals && (
@@ -44,7 +43,6 @@ export function HowItWorks() {
                     <b>Limits:</b> <span className="muted">{p.limits}</span>
                   </p>
                 )}
-                <p className="faint small">{m.description}</p>
               </article>
             )
           })}
@@ -62,7 +60,6 @@ export function HowItWorks() {
                 <header>
                   <Icon name={p.icon} />
                   <h3>{p.name}</h3>
-                  <small className="mono faint">{m.title}</small>
                 </header>
                 <p>{p.does}</p>
                 {p.reveals && (
@@ -75,7 +72,6 @@ export function HowItWorks() {
                     <b>Limits:</b> <span className="muted">{p.limits}</span>
                   </p>
                 )}
-                <p className="faint small">{m.description}</p>
               </article>
             )
           })}
@@ -95,38 +91,6 @@ export function HowItWorks() {
                   </span>
                 </dt>
                 <dd className="left">{VERDICT[v].line}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-
-        <SectionTitle icon="gauge" accent="yellow" small="Every answer says how much to trust it">
-          Confidence
-        </SectionTitle>
-        <div className="panel pad">
-          <dl className="stats">
-            {Object.entries(CONFIDENCE).map(([k, c]) => (
-              <div key={k}>
-                <dt>
-                  <ConfBar level={k} />
-                </dt>
-                <dd className="left">{c.tip}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-
-        <SectionTitle icon="triangle-exclamation" accent="orange" small="How serious each finding is">
-          Severity
-        </SectionTitle>
-        <div className="panel pad">
-          <dl className="stats">
-            {Object.entries(SEVERITY).map(([k, s]) => (
-              <div key={k}>
-                <dt>
-                  <SevChip sev={k} />
-                </dt>
-                <dd className="left">{s.tip}</dd>
               </div>
             ))}
           </dl>

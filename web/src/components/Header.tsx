@@ -1,7 +1,6 @@
 import { useAuth } from '../lib/auth'
 import { useHealth } from '../lib/health'
 import { Icon } from './ui/ui'
-import { AI_LABEL } from './AiPicker'
 
 export function Wordmark() {
   return (
@@ -18,11 +17,11 @@ export function Wordmark() {
 }
 
 export function Header({ route }: { route: string }) {
-  const { health, offline } = useHealth()
+  const { offline } = useHealth()
   const auth = useAuth()
   const nav = [
     { href: '#/', key: 'home', label: 'Cases', icon: 'folder-open', accent: 'blue' },
-    { href: '#/examine', key: 'examine', label: 'Locate', icon: 'location-crosshairs', accent: 'red' },
+    { href: '#/how', key: 'how', label: 'How it works', icon: 'circle-question', accent: 'green' },
   ]
   return (
     <header className="top">
@@ -30,41 +29,16 @@ export function Header({ route }: { route: string }) {
         <Wordmark />
         <nav className="nav">
           {nav.map((n) => (
-            <a key={n.key} href={n.href} className={`c-${n.accent} ${route === n.key ? 'active' : ''}`}>
+            <a key={n.key} href={n.href} className={`c-${n.accent} ${route === n.key || (n.key === 'home' && (route === 'examine' || route === 'case')) ? 'active' : ''}`}>
               <Icon name={n.icon} />
               {n.label}
             </a>
           ))}
         </nav>
         <div className="top-right">
-          {offline ? (
+          {offline && (
             <span className="status-pill c-red" data-tip="The analysis server is not reachable. Start it with: uv run earwitness serve">
               <i className="status-dot" /> Server offline
-            </span>
-          ) : (
-            health &&
-            (() => {
-              const providers = health.ai?.providers ?? (health.openai ? (['openai'] as const) : [])
-              const on = providers.length > 0
-              const names = providers.map((p) => AI_LABEL[p] ?? p).join(' / ')
-              return (
-                <span
-                  className={`status-pill ${on ? 'c-purple' : 'c-grey'}`}
-                  data-tip={
-                    on
-                      ? `AI checks are on (${names}): speech, the AI eyewitness and location-from-pixels run, and their results are labelled AI.` +
-                        (providers.length > 1 ? ' Pick the model per case under More options, or next to Rerun.' : '')
-                      : 'AI checks are off. Every result comes from measured checks only.'
-                  }
-                >
-                  <Icon name="robot" /> AI {on ? names : 'off'}
-                </span>
-              )
-            })()
-          )}
-          {health && (
-            <span className="status-pill c-green" data-tip={`${health.modules.length} checks run on every video, ${health.image_modules?.length ?? 0} on every photo`}>
-              <i className="status-dot on" /> {health.modules.length + (health.image_modules?.length ?? 0)} checks ready
             </span>
           )}
           {auth.enabled &&
