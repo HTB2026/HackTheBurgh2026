@@ -166,6 +166,47 @@ export const MODULES: Record<string, ModulePlain> = {
     reveals: 'Whether the file itself says it was generated, and with which prompt, seed and model.',
     limits: 'Without a label, pixel statistics only raise suspicion; they never prove generation.',
   },
+  // Checks run by the viewer's own GPU (WebGPU) when a case opens; labelled as browser results.
+  'gpu-frames': {
+    name: 'Frame scan (your browser)',
+    icon: 'film',
+    accent: 'blue',
+    does: 'Your GPU reads every frame and compares it with the one before.',
+    reveals: 'Cuts and sudden jumps, and frames repeated exactly (frozen video, frames padded in, frame-rate conversion).',
+    limits: 'Runs in this browser and is not saved with the case. Exact repeats survive only in the original file.',
+  },
+  'gpu-light': {
+    name: 'Lamp flicker (your browser)',
+    icon: 'lightbulb',
+    accent: 'yellow',
+    does: 'Your GPU measures, for every pixel, the pulse that mains lights leave in the video.',
+    reveals: 'Whether the lights run on a 50 Hz or a 60 Hz grid, and where in the picture the flicker comes from.',
+    limits: 'Runs in this browser and is not saved with the case. Daylight and some LED lights do not flicker.',
+  },
+  'gpu-sound': {
+    name: 'Hum and tones (your browser)',
+    icon: 'wave-square',
+    accent: 'purple',
+    does: 'Your GPU computes the spectrum of the soundtrack and follows the strongest frequency in the mains-hum and high bands.',
+    reveals: 'A steady mains hum (and so the grid frequency), and steady high tones that are often inaudible.',
+    limits: 'Runs in this browser and is not saved with the case.',
+  },
+  'gpu-ghost': {
+    name: 'JPEG ghost (your browser)',
+    icon: 'layer-group',
+    accent: 'blue',
+    does: 'Your GPU works out, for every 8×8 block, the JPEG quality it was last saved at.',
+    reveals: 'The quality the picture was saved at, and areas saved at a different quality (often pasted in).',
+    limits: 'Runs in this browser and is not saved with the case. Flat areas carry no evidence either way.',
+  },
+  'gpu-speech': {
+    name: 'Transcript on this device',
+    icon: 'microphone-lines',
+    accent: 'grey',
+    does: 'Whisper runs on your GPU in this browser; the audio never leaves your machine.',
+    reveals: 'What is said, with timestamps.',
+    limits: 'Experimental. Not saved with the case. The small model is rough on names.',
+  },
 }
 
 /** What a check is doing right now, as the live analysis headline ("…" is added by the UI). */
@@ -188,6 +229,10 @@ const DOING: Record<string, string | ((still: boolean) => string)> = {
   jpeg: 'Dissecting the JPEG compression',
   hidden: 'Searching for data hidden inside the file',
   faces: 'Finding faces and people',
+  'gpu-frames': 'Your GPU is reading every frame',
+  'gpu-light': 'Your GPU is measuring lamp flicker',
+  'gpu-sound': 'Your GPU is listening for hum and tones',
+  'gpu-ghost': 'Your GPU is reading the JPEG history',
   synthetic: 'Looking for signs the picture was AI-generated',
 }
 
@@ -244,7 +289,7 @@ export const TABS: TabDef[] = [
     label: 'Timeline',
     icon: 'film',
     accent: 'blue',
-    modules: ['timeline'],
+    modules: ['timeline', 'gpu-frames'],
     tags: ['cut', 'splice'],
     intro: 'Every flagged moment in order, and the frame-by-frame measurements that reveal cuts and joins.',
   },
@@ -253,7 +298,7 @@ export const TABS: TabDef[] = [
     label: 'Sound',
     icon: 'wave-square',
     accent: 'teal',
-    modules: ['spectrum', 'enf', 'avsync', 'sounds'],
+    modules: ['spectrum', 'enf', 'avsync', 'sounds', 'gpu-sound'],
     tags: ['audio', 'dtmf', 'tone', 'sync'],
     intro: 'What the microphone picked up, including sounds people cannot hear and the hum of the power grid.',
   },
@@ -262,7 +307,7 @@ export const TABS: TabDef[] = [
     label: 'Light',
     icon: 'lightbulb',
     accent: 'yellow',
-    modules: ['light'],
+    modules: ['light', 'gpu-light'],
     tags: ['flicker', 'sun'],
     intro: 'Mains-powered lamps flicker too fast to see. That flicker, and the light of the sun, can date and place a video.',
   },
@@ -280,7 +325,7 @@ export const TABS: TabDef[] = [
     label: 'Compression',
     icon: 'table-cells',
     accent: 'blue',
-    modules: ['jpeg'],
+    modules: ['jpeg', 'gpu-ghost'],
     tags: ['jpeg', 'ghost', 'grid', 'resaved'],
     intro: 'How the file was compressed: the tables and habits of the encoder, ghosts of earlier saves, and the 8\u00d78 grid that every JPEG leaves behind.',
   },
@@ -316,7 +361,7 @@ export const TABS: TabDef[] = [
     label: 'Text & speech',
     icon: 'comment-dots',
     accent: 'orange',
-    modules: ['ocr', 'transcript'],
+    modules: ['ocr', 'transcript', 'gpu-speech'],
     tags: ['text', 'speech', 'language', 'contact'],
     intro: 'Words that appear on screen and words that are spoken.',
   },
@@ -437,6 +482,9 @@ const KIND_EXPLAIN: Record<string, string> = {
   text: '',
   captions: 'Click a line to jump to it.',
   json: 'Expand a branch to see what is inside.',
+  'gpu-framescan': 'Measured in your browser. Red lines: abrupt changes; orange: frames identical to the one before. Click to jump there.',
+  'gpu-flicker': 'Measured in your browser. Bright areas pulse at the rate mains lights leave in video; compare them with the lamps in the picture.',
+  'gpu-transcript': 'Runs in your browser only when you ask: the audio never leaves this machine.',
 }
 
 export function explainArtifact(a: Artifact): string {

@@ -9,6 +9,8 @@ import { Icon, Modal } from '../ui/ui'
 import { JsonTree } from '../ui/Data'
 import { SeriesChart } from '../viz/SeriesChart'
 import { Spectrogram } from '../viz/Spectrogram'
+import { FrameScan } from './FrameScan'
+import { BrowserTranscript } from './BrowserTranscript'
 import { Bars } from '../viz/Bars'
 import { TableView } from '../viz/TableView'
 import { MapView } from '../viz/MapView'
@@ -109,6 +111,12 @@ export function ArtifactBody({ a }: { a: Artifact }) {
   switch (a.kind) {
     case 'series':
       return <SeriesChart a={a} />
+    case 'gpu-framescan':
+      return <FrameScan thumbUrl={null} part="curve" />
+    case 'gpu-flicker':
+      return <FrameScan thumbUrl={a.data?.thumbUrl ?? null} part="flicker" />
+    case 'gpu-transcript':
+      return <BrowserTranscript />
     case 'spectrogram':
       return <Spectrogram a={a} />
     case 'bars':

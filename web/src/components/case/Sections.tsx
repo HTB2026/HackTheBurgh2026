@@ -12,7 +12,6 @@ import { DataView, JsonTree } from '../ui/Data'
 import { Timeline } from '../viz/Timeline'
 import { radiusText, type MapPoint } from '../viz/MapView'
 import { MapOrGlobe } from './MapOrGlobe'
-import { browserMoments, useGpuChecks } from '../../lib/gpuChecks'
 import { ArtifactGroup } from './Artifacts'
 
 const arts = (state: CaseState) => state.artifactOrder.map((id) => state.artifacts[id])
@@ -48,11 +47,8 @@ interface Cluster {
 }
 
 /** Only warning/critical moments, grouped when they fall within a second of each other. */
-export function KeyMoments({ findings: serverFindings, duration }: { findings: Finding[]; duration: number }) {
+export function KeyMoments({ findings, duration }: { findings: Finding[]; duration: number }) {
   const pb = usePlayback()
-  // Cuts and repeated frames found by the browser's frame scan join the server's moments.
-  const checks = useGpuChecks()
-  const findings = useMemo(() => [...serverFindings, ...browserMoments(checks.frames.result)], [serverFindings, checks.frames.result])
   const [ref, size] = useElementSize<HTMLDivElement>()
   const dur = duration > 0 ? duration : 1
   const LABEL_W = 220

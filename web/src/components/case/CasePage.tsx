@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useCaseStream } from '../../lib/useCaseStream'
 import { Playback, PlaybackContext } from '../../lib/playback'
 import { MediaKindContext, RegionContext, RegionFocus } from '../../lib/region'
@@ -17,10 +17,7 @@ import { AiPicker, aiName } from '../AiPicker'
 import type { AiProvider, Health } from '../../lib/types'
 import { Player } from './Player'
 import { PhotoStage, RegionList } from './PhotoStage'
-import { FrameScan } from './FrameScan'
-import { QuickLook } from './QuickLook'
-import { GpuChecksProvider } from '../../lib/gpuChecks'
-import { BrowserTranscript } from './BrowserTranscript'
+import { browserLayer, GpuChecksContext, useGpuChecksRunner } from '../../lib/gpuChecks'
 import { FindingsBoard } from './Findings'
 import { geoFinding, LocationHero } from './GeoBoard'
 import { AnalysisLive } from './AnalysisLive'
@@ -68,6 +65,35 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
     () => ({ mediaUrl: state.mediaUrl ?? null, originalUrl: info?.original_url ?? null, fps: info?.video?.fps ?? null, duration: info?.duration_s ?? 0 }),
     [state.mediaUrl, info?.original_url, info?.video?.fps, info?.duration_s],
   )
+  // Checks the viewer's GPU runs by itself; their results join the usual views (findings, key
+  // moments, flagged regions, exhibits, the live panel) but never the verdict, which reads `state`.
+  const checks = useGpuChecksRunner({ media, kind: still ? 'image' : 'video', hasAudio: !!info?.has_audio, photoSrc })
+  const browserSeen = useRef(new Map<string, number>())
+  const withBrowser = useMemo(() => {
+    // First time each browser item appeared (the case state keeps this for every item).
+    const at = (key: string) => {
+      const m = browserSeen.current
+      if (!m.has(key)) m.set(key, Date.now())
+      return m.get(key)!
+    }
+    const layer = browserLayer(checks, {
+      kind: still ? 'image' : 'video',
+      hasAudio: !!info?.has_audio,
+      hasVideo: !!info?.video,
+      serverTranscript: Object.values(state.artifacts).some((a) => a.kind === 'captions'),
+      duration: info?.duration_s ?? 0,
+      thumbUrl: info?.thumb_url ?? null,
+    })
+    if (!layer.findings.length && !layer.artifacts.length && !layer.order.length) return state
+    return {
+      ...state,
+      findings: [...state.findings, ...layer.findings.map((f) => ({ ...f, at: at(`f:${f.title}`) }))],
+      modules: { ...state.modules, ...layer.modules },
+      moduleOrder: [...state.moduleOrder, ...layer.order],
+      artifacts: { ...state.artifacts, ...Object.fromEntries(layer.artifacts.map((a) => [a.id, { ...a, at: at(`a:${a.id}`) }])) },
+      artifactOrder: [...state.artifactOrder, ...layer.artifacts.map((a) => a.id)],
+    }
+  }, [checks, state, still, info?.has_audio, info?.video, info?.duration_s, info?.thumb_url])
 
   useEffect(() => {
     if (info?.duration_s) pb.set({ duration: info.duration_s })
@@ -118,7 +144,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   return (
     <PlaybackContext.Provider value={pb}>
       <CaseMediaContext.Provider value={media}>
-      <GpuChecksProvider kind={still ? 'image' : 'video'} hasAudio={!!info?.has_audio} photoSrc={photoSrc}>
+      <GpuChecksContext.Provider value={checks}>
       <RegionContext.Provider value={rf}>
         <MediaKindContext.Provider value={facts.kind}>
           <CaseHead
@@ -138,8 +164,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
               <AnalysisLive state={state} facts={facts} />
             ) : (
               <>
-                {facts.running && <AnalysisLive state={state} facts={facts} />}
-                {facts.running && <QuickLook duration={info.duration_s} />}
+                {facts.running && <AnalysisLive state={withBrowser} facts={facts} />}
                 <LocationHero state={state} facts={facts} points={points}>
                   {dossier && (
                     <button className="reveal-btn" onClick={() => setRevealing(true)}>
@@ -153,7 +178,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
                   <div className={`video-col ${still ? 'photo-col' : ''}`}>
                     <div className="video-frame">
                       {still ? (
-                        <PhotoStage info={info} mediaUrl={state.mediaUrl} running={facts.running} overlays={overlays} findings={state.findings} height={600} onOpenFinding={openFinding} />
+                        <PhotoStage info={info} mediaUrl={state.mediaUrl} running={facts.running} overlays={overlays} findings={withBrowser.findings} height={600} onOpenFinding={openFinding} />
                       ) : (
                         <Player
                           info={info}
@@ -166,10 +191,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
                         />
                       )}
                     </div>
-                    {still ? <RegionList findings={state.findings} onOpenFinding={openFinding} /> : <KeyMoments findings={state.findings} duration={info.duration_s} />}
-                    {!facts.running && <QuickLook duration={info.duration_s} open={false} />}
-                    {!still && info.video && <FrameScan thumbUrl={info.thumb_url} />}
-                    {!still && info.has_audio && <BrowserTranscript />}
+                    {still ? <RegionList findings={withBrowser.findings} onOpenFinding={openFinding} /> : <KeyMoments findings={withBrowser.findings} duration={info.duration_s} />}
                   </div>
                 </section>
 
@@ -190,11 +212,11 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
                       id="findings"
                       title="Every finding"
                       desc="Everything every check reported, most serious first, with all its measurements."
-                      count={state.findings.length}
+                      count={withBrowser.findings.length}
                       open={open.has('findings')}
                       onToggle={() => toggle('findings')}
                     >
-                      <FindingsBoard findings={state.findings} modules={state.modules} focus={focus} />
+                      <FindingsBoard findings={withBrowser.findings} modules={withBrowser.modules} focus={focus} />
                     </Detail>
                     <Detail
                       id="exhibits"
@@ -208,7 +230,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
                       open={open.has('exhibits')}
                       onToggle={() => toggle('exhibits')}
                     >
-                      <Exhibits state={state} geoBoard={!!geo} />
+                      <Exhibits state={withBrowser} geoBoard={!!geo} />
                     </Detail>
                     {notes && (
                       <Detail
@@ -258,7 +280,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
           )}
         </MediaKindContext.Provider>
       </RegionContext.Provider>
-      </GpuChecksProvider>
+      </GpuChecksContext.Provider>
       </CaseMediaContext.Provider>
     </PlaybackContext.Provider>
   )

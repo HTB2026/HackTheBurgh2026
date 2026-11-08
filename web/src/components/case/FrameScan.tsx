@@ -19,10 +19,11 @@ function heat(t: number): [number, number, number] {
 }
 
 /**
- * Reads every frame of the video on the GPU: how much each frame changed from the one before
- * (cuts, jumps, frozen or repeated frames) and where lamp flicker comes from in the picture.
+ * Exhibit bodies for the browser's frame scan (runs automatically, see lib/gpuChecks.tsx):
+ * `curve` = how much each frame changed from the one before (cuts, jumps, repeated frames), with
+ * the scan controls; `flicker` = where lamp flicker comes from in the picture.
  */
-export function FrameScan({ thumbUrl }: { thumbUrl: string | null }) {
+export function FrameScan({ thumbUrl, part }: { thumbUrl: string | null; part: 'curve' | 'flicker' }) {
   const gpuState = useGpu()
   const gpu = gpuState === 'loading' ? null : gpuState
   const media = useCaseMedia()
@@ -97,13 +98,15 @@ export function FrameScan({ thumbUrl }: { thumbUrl: string | null }) {
   const flickerRatio = ampStats ? ampStats.median / Math.max(0.005, ampStats.noise) : 0
   const hotRatio = ampStats ? ampStats.p99 / Math.max(0.005, ampStats.noise) : 0
 
+  if (part === 'flicker') {
+    if (!result) return <p className="faint small">{running ? `Reading the frames on your GPU… ${Math.round((progress ?? 0) * 100)}%` : 'Appears once the frame scan has run.'}</p>
+  }
+
   return (
-    <div className="frame-scan">
+    <div className="frame-scan embedded">
+      {part === 'curve' && (
       <div className="frame-scan-head">
-        <b>
-          <Icon name="film" /> Frame scan
-        </b>
-        <span className="faint small">Reads every frame on your GPU: cuts, frozen or repeated frames, and where lamp flicker comes from.</span>
+        <span className="faint small">Every frame read on your GPU, compared with the one before.</span>
         <span className="grow" />
         <select className="input ctl-select" value={rate} onChange={(e) => setRate(Number(e.target.value))} disabled={progress != null} aria-label="Scan speed">
           {RATES.map((r) => (
@@ -122,14 +125,15 @@ export function FrameScan({ thumbUrl }: { thumbUrl: string | null }) {
           </button>
         )}
       </div>
-      {error && <div className="chart-foot">{error}</div>}
-      {progress != null && (
+      )}
+      {part === 'curve' && error && <div className="chart-foot">{error}</div>}
+      {part === 'curve' && progress != null && (
         <div className="frame-scan-live">
           <canvas ref={liveRef} className="frame-scan-changes" />
           <span className="faint small">What changed since the previous frame (bright = changed)</span>
         </div>
       )}
-      {result && (
+      {result && part === 'curve' && (
         <>
           <svg className="frame-scan-curve" viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" onClick={(e) => {
             const r = e.currentTarget.getBoundingClientRect()
@@ -170,6 +174,10 @@ export function FrameScan({ thumbUrl }: { thumbUrl: string | null }) {
             )}{' '}
             Click the curve to jump there.
           </p>
+        </>
+      )}
+      {result && part === 'flicker' && (
+        <>
           <div className="frame-scan-flicker">
             <div className="frame-scan-flicker-img">
               {thumbUrl && <img src={thumbUrl} alt="" />}
