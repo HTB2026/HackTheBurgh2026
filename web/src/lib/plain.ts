@@ -168,6 +168,35 @@ export const MODULES: Record<string, ModulePlain> = {
   },
 }
 
+/** What a check is doing right now, as the live analysis headline ("…" is added by the UI). */
+const DOING: Record<string, string | ((still: boolean) => string)> = {
+  provenance: 'Reading the file’s history and hidden labels',
+  timeline: 'Checking the timing of every frame for cuts',
+  spectrum: 'Listening across the whole sound spectrum',
+  enf: 'Matching the electrical hum to the power grid',
+  light: 'Measuring light flicker frame by frame',
+  pulse: 'Looking for a heartbeat in skin colour',
+  tamper: (still) => (still ? 'Scanning every pixel for pasted-in regions' : 'Scanning frames for tampered pixels'),
+  avsync: 'Lining up the sound against the picture',
+  ocr: 'Reading text in the picture',
+  transcript: 'Transcribing what is said',
+  vision: (still) => (still ? 'AI eyewitness is studying the photo' : 'AI eyewitness is studying key frames'),
+  geo: (still) => `Working out where this was ${still ? 'taken' : 'filmed'}`,
+  sounds: 'Identifying sounds in the background',
+  weather: 'Checking the weather against the claimed date',
+  brief: 'Writing up the case',
+  jpeg: 'Dissecting the JPEG compression',
+  hidden: 'Searching for data hidden inside the file',
+  faces: 'Finding faces and people',
+  synthetic: 'Looking for signs the picture was AI-generated',
+}
+
+export function moduleDoing(name: string, still: boolean, title?: string): string {
+  const d = DOING[name]
+  if (typeof d === 'function') return d(still)
+  return d ?? `Running ${modulePlain(name, title).name.toLowerCase()}`
+}
+
 export function modulePlain(name: string, title?: string): ModulePlain {
   return (
     MODULES[name] ?? {

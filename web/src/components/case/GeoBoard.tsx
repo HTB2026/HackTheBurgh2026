@@ -232,10 +232,12 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
         <Icon name="location-crosshairs" /> Where this {noun} was {filmed}
       </p>
       <div className="loc-head">
-        <span className={`gb-stamp ${verified ? 'ok' : tone === 'gps' ? 'gps' : 'lead'}`}>
-          {searching ? <i className="pulse-dot" /> : <Icon name={verified ? 'circle-check' : gps && !located ? 'satellite' : 'magnifying-glass-location'} />} {stamp}
-        </span>
-        <h2 className="loc-place">{title}</h2>
+        <div className="loc-title">
+          <span className={`gb-stamp small ${verified ? 'ok' : tone === 'gps' ? 'gps' : 'lead'}`}>
+            {searching ? <i className="pulse-dot" /> : <Icon name={verified ? 'circle-check' : gps && !located ? 'satellite' : 'magnifying-glass-location'} />} {stamp}
+          </span>
+          <h2 className="loc-place">{title}</h2>
+        </div>
         <div className="loc-meta muted">
           {located && (
             <span className="mono">
@@ -269,14 +271,18 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
 
       <div className={`loc-grid ${located ? '' : 'map-only'}`}>
         <div className="loc-map">
-          {points.length ? <MapView points={points} height={500} /> : <div className="loc-map-empty">{searching ? <i className="pulse-dot big" /> : <Icon name="earth-europe" />}</div>}
+          {points.length ? <MapView points={points} height={340} /> : <div className="loc-map-empty">{searching ? <i className="pulse-dot big" /> : <Icon name="earth-europe" />}</div>}
         </div>
         {located && (
           <div className="loc-proof">
-            <figure className="loc-evidence" onClick={() => frame?.time_s != null && pb.seek(frame.time_s)} role="button" tabIndex={0} data-tip={still ? undefined : 'Click to jump to this moment'}>
-              {frame?.url ? <img src={frame.url} alt="Evidence frame" /> : <div className="gb-img"><div>No frame</div></div>}
-              <figcaption>{still ? 'The photo' : `The video${frame?.time_s != null ? ` at ${mmss(frame.time_s)}` : ''}`}</figcaption>
-            </figure>
+            <div className="loc-shots">
+              <figure className="gb-img evidence" onClick={() => frame?.time_s != null && pb.seek(frame.time_s)} role="button" tabIndex={0} data-tip={still ? undefined : 'Click to jump to this moment'}>
+                {frame?.url ? <img src={frame.url} alt="Evidence frame" /> : <div>No frame</div>}
+                <figcaption>{still ? 'The photo' : `The video${frame?.time_s != null ? ` at ${mmss(frame.time_s)}` : ''}`}</figcaption>
+              </figure>
+              <Thumb a={state.artifacts[`geo:ref${win}_wiki`]} label={w?.landmark ? `Wikipedia: ${w.landmark}` : 'Landmark photo'} empty="No landmark photo" />
+              <Thumb a={state.artifacts[`geo:ref${win}_sat`]} label="Satellite view" empty={(w?.radius_km ?? 0) > 25 ? 'Area too large for satellite' : 'No satellite view'} />
+            </div>
             {frames.length > 1 && (
               <div className="gb-frames">
                 {frames.map((fr, i) => (
@@ -287,13 +293,6 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
                 ))}
               </div>
             )}
-            <p className="loc-vs">
-              <Icon name="arrows-left-right" /> checked against the real place
-            </p>
-            <div className="loc-refs">
-              <Thumb a={state.artifacts[`geo:ref${win}_wiki`]} label={w?.landmark ? `Wikipedia: ${w.landmark}` : 'Landmark photo'} empty="No landmark photo" />
-              <Thumb a={state.artifacts[`geo:ref${win}_sat`]} label="Satellite view" empty={(w?.radius_km ?? 0) > 25 ? 'Area too large for satellite' : 'No satellite view'} />
-            </div>
             <MatchBar match={leads[win]?.match ?? d.match} ok={verified} />
             <Ticks lead={leads[win]} />
             <Why c={w} />
@@ -303,12 +302,16 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
 
       {children}
 
-      <p className="loc-how muted">
-        How it works: the AI looks only at the pixels and sounds (never the file’s GPS), proposes places, then each place is checked against a Wikipedia
-        photo of its landmark and a satellite view. A place is <b>verified</b> only when the real-world pictures clearly match the {noun}.
-      </p>
-
       <div className="loc-more">
+        <details>
+          <summary>
+            <Icon name="circle-question" /> How this was worked out
+          </summary>
+          <p className="loc-how muted">
+            The AI looks only at the pixels and sounds (never the file’s GPS), proposes places, then each place is checked against a Wikipedia photo of its
+            landmark and a satellite view. A place is <b>verified</b> only when the real-world pictures clearly match the {noun}.
+          </p>
+        </details>
         {others.length > 0 && (
           <details>
             <summary>
