@@ -1,21 +1,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { textureFromUrl, uniformBuffer, useFrameRequest, useGpuCanvas, type Gpu } from '../../lib/gpu'
 import { LENS_COMPUTE, LENS_DRAW } from '../../lib/shaders/lens.wgsl'
+import { runGhost } from '../../lib/ghost'
 
 export type GpuLensMode = 'ela' | 'noise' | 'contrast' | 'sobel' | 'ghost'
 
 const MODE_ID: Record<GpuLensMode, number> = { ela: 0, noise: 1, contrast: 2, sobel: 3, ghost: 4 }
 
-/** JPEG ghost: candidate save qualities 30, 35, ..., 65, then every quality 70..100 (as in the shader). */
-export const GHOST_QUALITIES = [...Array.from({ length: 8 }, (_, k) => 30 + 5 * k), ...Array.from({ length: 31 }, (_, k) => 70 + k)]
-const HIST = (GHOST_QUALITIES.length + 1) * 4
+export { GHOST_QUALITIES } from '../../lib/ghost'
 
 interface Pipelines {
   ela: GPUComputePipeline
   filters: GPUComputePipeline
-  ghost: GPUComputePipeline
-  ghostPaint: GPUComputePipeline
-  hist: GPUBuffer
   draw: GPURenderPipeline
   params: GPUBuffer
   view: GPUBuffer
@@ -34,9 +30,6 @@ function pipelines(gpu: Gpu): Pipelines {
   const made: Pipelines = {
     ela: device.createComputePipeline({ layout: 'auto', compute: { module: compute, entryPoint: 'ela' }, label: 'ela' }),
     filters: device.createComputePipeline({ layout: 'auto', compute: { module: compute, entryPoint: 'filters' }, label: 'filters' }),
-    ghost: device.createComputePipeline({ layout: 'auto', compute: { module: compute, entryPoint: 'ghost' }, label: 'ghost' }),
-    ghostPaint: device.createComputePipeline({ layout: 'auto', compute: { module: compute, entryPoint: 'ghostPaint' }, label: 'ghost paint' }),
-    hist: device.createBuffer({ size: HIST, usage: GPUBufferUsage.STORAGE | GPUBufferUsage.COPY_SRC | GPUBufferUsage.COPY_DST }),
     draw: device.createRenderPipeline({
       layout: 'auto',
       vertex: { module: draw, entryPoint: 'vs' },
@@ -127,39 +120,15 @@ export function GpuLens({
     })
     device.queue.writeBuffer(P.params, 0, new Uint32Array([MODE_ID[mode]]))
     device.queue.writeBuffer(P.params, 4, new Float32Array([quality, gain, 0]))
-    const enc = device.createCommandEncoder({ label: 'lens compute' })
-    const pass = enc.beginComputePass()
-    let readback: GPUBuffer | null = null
-    let blocks: GPUBuffer | null = null
     if (mode === 'ghost') {
-      // Pass 1: estimate each block's save quality and count them; pass 2: paint against the dominant one.
-      const bx = Math.ceil(w / 8)
-      const by = Math.ceil(h / 8)
-      blocks = device.createBuffer({ size: bx * by * 4, usage: GPUBufferUsage.STORAGE })
-      device.queue.writeBuffer(P.hist, 0, new Uint32Array(HIST / 4))
-      pass.setPipeline(P.ghost)
-      pass.setBindGroup(0, device.createBindGroup({
-        layout: P.ghost.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: source.createView() },
-          { binding: 3, resource: { buffer: P.hist } },
-          { binding: 4, resource: { buffer: blocks } },
-        ],
-      }))
-      pass.dispatchWorkgroups(bx, by)
-      pass.setPipeline(P.ghostPaint)
-      pass.setBindGroup(0, device.createBindGroup({
-        layout: P.ghostPaint.getBindGroupLayout(0),
-        entries: [
-          { binding: 0, resource: source.createView() },
-          { binding: 1, resource: texture.createView() },
-          { binding: 3, resource: { buffer: P.hist } },
-          { binding: 4, resource: { buffer: blocks } },
-        ],
-      }))
-      pass.dispatchWorkgroups(bx, by)
+      // Shared with the automatic browser checks (lib/ghost.ts): estimate and paint in one go.
+      runGhost(gpu, source, texture)
+        .then((r) => ghostCb.current?.(r.counts))
+        .catch(() => {})
     } else {
       const pipeline = mode === 'ela' ? P.ela : P.filters
+      const enc = device.createCommandEncoder({ label: 'lens compute' })
+      const pass = enc.beginComputePass()
       pass.setPipeline(pipeline)
       pass.setBindGroup(0, device.createBindGroup({
         layout: pipeline.getBindGroupLayout(0),
@@ -170,23 +139,8 @@ export function GpuLens({
         ],
       }))
       pass.dispatchWorkgroups(Math.ceil(w / 8), Math.ceil(h / 8))
-    }
-    pass.end()
-    if (mode === 'ghost') {
-      readback = device.createBuffer({ size: HIST, usage: GPUBufferUsage.MAP_READ | GPUBufferUsage.COPY_DST })
-      enc.copyBufferToBuffer(P.hist, 0, readback, 0, HIST)
-    }
-    device.queue.submit([enc.finish()])
-    blocks?.destroy()
-    if (readback) {
-      const rb = readback
-      rb.mapAsync(GPUMapMode.READ)
-        .then(() => {
-          ghostCb.current?.(Array.from(new Uint32Array(rb.getMappedRange().slice(0))))
-          rb.unmap()
-        })
-        .catch(() => {})
-        .finally(() => rb.destroy())
+      pass.end()
+      device.queue.submit([enc.finish()])
     }
 
     const bind = device.createBindGroup({
