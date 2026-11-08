@@ -74,7 +74,7 @@ INVENTORY_SCHEMA = {
         "land_use", "vegetation", "soil_and_rock", "terrain", "horizon", "buildings",
         "vehicles", "osm_features", "lighting", "sun_visible", "sun_elevation_deg",
         "sun_basis", "shadow_direction", "hemisphere_hint", "hemisphere_reasoning",
-        "stars_visible", "constellations", "camera_tilt_deg", "moon", "strongest_clues",
+        "stars_visible", "constellations", "camera_tilt_deg", "horizon_left", "horizon_right", "moon", "strongest_clues",
     ],
     "properties": {
         "scene_type": {"type": "string", "enum": ["urban", "suburban", "rural", "wilderness", "indoor", "water"]},
@@ -104,6 +104,8 @@ INVENTORY_SCHEMA = {
         "stars_visible": {"type": "boolean"},
         "constellations": {"type": "string", "description": "Constellations or bright stars you can identify; 'none'."},
         "camera_tilt_deg": {"type": ["number", "null"], "description": "How far above level the camera points (0 level, 90 straight up); null if unknown."},
+        "horizon_left": {"type": ["number", "null"], "description": "Where the true horizon (the distant ground line, not nearby grass or objects) meets the LEFT edge of the first frame, as a fraction of the height from the top (0 top, 1 bottom); null if it is not visible."},
+        "horizon_right": {"type": ["number", "null"], "description": "Same, at the RIGHT edge of the first frame."},
         "moon": {"type": "string", "description": "Moon phase and position if visible; 'none'."},
         "strongest_clues": {"type": "array", "items": {"type": "string"}, "maxItems": 6},
     },
@@ -400,14 +402,34 @@ def solve_stars(
         x0 = max(0, min(w - side, cx - side // 2))
         crop = gray[max(0, top) : max(0, top) + side, x0 : x0 + side]
         fov = 2 * math.degrees(math.atan(side / 2 / f))
+        half = side / 2
+        # The sky directions of the crop's centre, a point right of it and a
+        # point above it fix the camera's orientation (see zenith_from_stars).
         result = solver.solve_from_image(
-            Image.fromarray(crop), fov_estimate=fov, fov_max_error=fov * 0.35
+            Image.fromarray(crop),
+            fov_estimate=fov,
+            fov_max_error=fov * 0.35,
+            target_pixel=np.array(
+                [[half, half], [half, half * 1.5], [half * 0.5, half]]
+            ),
         )
 
         if result.get("RA") is not None and (result.get("Matches") or 0) >= 6:
             cy = max(0, top) + side / 2
+            centre, right, up = (
+                _sky_vector(a, d)
+                for a, d in zip(result["RA_target"], result["Dec_target"])
+            )
+            r = right - centre * float(centre @ right)
+            r /= np.linalg.norm(r)
+            u = up - centre * float(centre @ up) - r * float(r @ up)
+            u /= np.linalg.norm(u)
 
             return {
+                # Camera model of the solved crop: rays (x - cx, -(y - cy), f_px)
+                # in full-frame pixels map to sky as x*right + y*up + z*forward.
+                "basis": [centre.tolist(), r.tolist(), u.tolist()],
+                "f_px": half / math.tan(math.radians(float(result["FOV"])) / 2),
                 "ra": float(result["RA"]),
                 "dec": float(result["Dec"]),
                 "fov": float(result["FOV"]),
@@ -418,6 +440,117 @@ def solve_stars(
             }
 
     return None
+
+
+def _sky_vector(ra_deg: float, dec_deg: float) -> np.ndarray:
+    a, d = math.radians(ra_deg), math.radians(dec_deg)
+
+    return np.array([math.cos(d) * math.cos(a), math.cos(d) * math.sin(a), math.sin(d)])
+
+
+def refine_horizon(
+    gray: np.ndarray, left: float, right: float, search: float = 0.025
+) -> tuple[float, float]:
+    """Snap an estimated horizon (fractions of the height at the left and right
+    edges) to the strongest sky/ground brightness step near it.
+
+    Measured in the outer thirds of the frame and extended to the edges; a
+    side with no clear step keeps the estimate.
+    """
+    h, w = gray.shape[:2]
+    blurred = cv2.GaussianBlur(gray, (0, 0), 3).astype(np.float64)
+    found = []
+
+    for guess, x_mid in ((left, w / 6), (right, 5 * w / 6)):
+        band = blurred[:, int(x_mid - w / 8) : int(x_mid + w / 8)]
+        profile = np.median(band, axis=1)
+        k = max(3, h // 100)
+        lo = max(k, int((guess - search) * h))
+        hi = min(h - k - 1, int((guess + search) * h))
+        best, step = None, 0.0
+
+        for y in range(lo, hi):
+            contrast = abs(
+                profile[y - k : y].mean() - profile[y + 1 : y + k + 1].mean()
+            )
+
+            if contrast > step:
+                best, step = y, contrast
+
+        found.append((x_mid, best / h if best is not None and step >= 3 else guess))
+
+    (x1, y1), (x2, y2) = found
+    slope = (y2 - y1) / (x2 - x1)
+
+    return y1 - slope * x1, y1 + slope * (w - x1)
+
+
+def zenith_from_stars(
+    solved: dict[str, Any], width: int, height: int, horizon: tuple[float, float]
+) -> dict[str, float] | None:
+    """Where straight up points among the stars, from a solved star field and the horizon.
+
+    The horizon line (fractions of the height at the left and right edges)
+    fixes the horizontal plane; its normal is the zenith. The zenith's
+    declination is the observer's latitude (the height of the celestial pole
+    above the horizon), and its right ascension is the local sidereal time,
+    which with a known UTC time gives the longitude. No date is needed for
+    the latitude.
+    """
+    forward, right, up = (np.array(v) for v in solved["basis"])
+    cx, cy = solved["centre_px"]
+    f = solved["f_px"]
+
+    def ray(x: float, y: float) -> np.ndarray:
+        return np.array([x - cx, -(y - cy), f])
+
+    zenith = np.cross(ray(0, horizon[0] * height), ray(width, horizon[1] * height))
+
+    if np.linalg.norm(zenith) == 0:
+        return None
+
+    zenith /= np.linalg.norm(zenith)
+
+    if zenith[1] < 0:  # up in the picture is up in the world
+        zenith = -zenith
+
+    sky = zenith[0] * right + zenith[1] * up + zenith[2] * forward
+
+    return {
+        "latitude": math.degrees(math.asin(max(-1.0, min(1.0, sky[2])))),
+        "sidereal_deg": math.degrees(math.atan2(sky[1], sky[0])) % 360,
+        # How high the solved field's centre stands above the horizon.
+        "field_altitude": math.degrees(
+            math.asin(max(-1.0, min(1.0, float(zenith[2]))))
+        ),
+    }
+
+
+def star_fix_zones(
+    fix: dict[str, float], when: datetime | None, tolerance_deg: float = 4.0
+) -> list[dict[str, Any]]:
+    """A latitude band from the pole's height, and with a time a spot as well."""
+    lat = fix["latitude"]
+    zones = [
+        band_zone(
+            lat - tolerance_deg,
+            lat + tolerance_deg,
+            f"Celestial pole {abs(lat):.0f}° {'above' if lat >= 0 else 'below'} the horizon: about {abs(lat):.0f}°{'N' if lat >= 0 else 'S'}",
+        )
+    ]
+
+    if when is not None:
+        lon = (fix["sidereal_deg"] - gmst_deg(when) + 180) % 360 - 180
+        zones.append(
+            ring_zone(
+                (lat, lon),
+                0.0,
+                2 * tolerance_deg,
+                f"Stars at {when:%H:%M} UTC place the camera near {lat:.0f}°, {lon:.0f}°",
+            )
+        )
+
+    return zones
 
 
 # ---- ground-level photos -----------------------------------------------------------
@@ -851,7 +984,12 @@ def match_skyline(
 
 
 async def skyline_check(
-    client: httpx.AsyncClient, rows: np.ndarray, aspect: float, lat: float, lon: float
+    client: httpx.AsyncClient,
+    rows: np.ndarray,
+    aspect: float,
+    lat: float,
+    lon: float,
+    hilly: bool = False,
 ) -> dict[str, Any] | None:
     """Compare the frame's skyline with the terrain at and around the candidate."""
     dem = await dem_around(client, lat, lon)
@@ -877,7 +1015,9 @@ async def skyline_check(
     if best is None:
         return None
 
-    if best["relief_there"] < 0.4 and best["relief_seen"] >= 1.5:
+    # Only when the analyst also sees hills: grass or posts in front of a flat
+    # horizon look like relief to the skyline tracer.
+    if hilly and best["relief_there"] < 0.4 and best["relief_seen"] >= 1.5:
         return best | {
             "ok": False,
             "text": f"hills on the skyline, but the land there is flat ({best['relief_there']:.1f}° of relief)",

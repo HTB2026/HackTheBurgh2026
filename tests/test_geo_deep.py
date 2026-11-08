@@ -224,3 +224,85 @@ def test_solve_stars_identifies_orion_offline():
 
 def test_solve_stars_gives_up_on_a_starless_sky():
     assert g.solve_stars(np.full((1200, 1800, 3), 20, np.uint8)) is None
+
+
+def _observer_photo(lat, lst, pitch=20.0, azimuth=0.0, w=1800, h=1200, hfov=69.0):
+    """The sky a camera at latitude ``lat`` sees at local sidereal time ``lst``.
+
+    Stars are placed by their real altitude and azimuth, about as bright as a
+    phone's night mode records them; below the level horizon is dark,
+    starless ground. Returns the picture and the horizon row
+    (fraction of the height).
+    """
+    stars = g._tetra3().star_table
+    phi, theta = np.radians(lat), np.radians(lst)
+    ra, dec = stars[:, 0], stars[:, 1]
+    hour = theta - ra
+    alt = np.arcsin(
+        np.sin(phi) * np.sin(dec) + np.cos(phi) * np.cos(dec) * np.cos(hour)
+    )
+    az = np.arctan2(
+        -np.cos(dec) * np.sin(hour),
+        np.sin(dec) * np.cos(phi) - np.cos(dec) * np.cos(hour) * np.sin(phi),
+    )
+    # East, north, up.
+    v = np.stack([np.cos(alt) * np.sin(az), np.cos(alt) * np.cos(az), np.sin(alt)], 1)
+    a, p = np.radians(azimuth), np.radians(pitch)
+    forward = np.array([np.sin(a) * np.cos(p), np.cos(a) * np.cos(p), np.sin(p)])
+    right = np.array([np.cos(a), -np.sin(a), 0.0])
+    up = np.cross(right, forward)
+    f = (w / 2) / np.tan(np.radians(hfov) / 2)
+    depth = v @ forward
+    seen = (alt > 0) & (depth > 0.2)
+    px = w / 2 + f * (v[seen] @ right) / depth[seen]
+    py = h / 2 - f * (v[seen] @ up) / depth[seen]
+    horizon = h / 2 + f * np.tan(p)
+    image = np.random.default_rng(1).normal(16, 3, (h, w))
+    yy, xx = np.mgrid[0:13, 0:13]
+
+    for x, y, mag in zip(px, py, stars[seen, 5]):
+        if 6 <= x < w - 7 and 6 <= y < min(h, horizon) - 7 and mag < 6.5:
+            x0, y0 = int(x) - 6, int(y) - 6
+            image[y0 : y0 + 13, x0 : x0 + 13] += min(
+                240.0, 255 * 10 ** (-0.4 * (mag - 3))
+            ) * np.exp(-((xx + x0 - x) ** 2 + (yy + y0 - y) ** 2) / 3.0)
+
+    image[int(horizon) :] = np.random.default_rng(2).normal(
+        5, 1.5, (h - int(horizon), w)
+    )
+    gray = np.clip(image, 0, 255).astype(np.uint8)
+
+    return np.dstack([gray] * 3), horizon / h
+
+
+def test_pole_height_gives_the_latitude_without_a_date():
+    photo, horizon = _observer_photo(lat=47.0, lst=300.0)
+    solved = g.solve_stars(photo)
+
+    assert solved is not None
+
+    # The analyst's guess of the horizon is a little off; the brightness step fixes it.
+    guess = horizon - 0.03
+    line = g.refine_horizon(photo[..., 0], guess, guess)
+    assert abs(line[0] - horizon) < 0.01 and abs(line[1] - horizon) < 0.01
+
+    fix = g.zenith_from_stars(solved, photo.shape[1], photo.shape[0], line)
+
+    assert abs(fix["latitude"] - 47.0) < 2.0
+    assert abs(((fix["sidereal_deg"] - 300.0 + 180) % 360) - 180) < 3.0
+
+
+def test_star_fix_with_a_time_gives_a_spot():
+    when = datetime(2026, 8, 1, 6, tzinfo=timezone.utc)
+    lon = -110.0  # Montana
+    lst = (g.gmst_deg(when) + lon) % 360
+    photo, horizon = _observer_photo(lat=46.0, lst=lst, pitch=15.0)
+    fix = g.zenith_from_stars(
+        g.solve_stars(photo), photo.shape[1], photo.shape[0], (horizon, horizon)
+    )
+
+    band, spot = g.star_fix_zones(fix, when)
+
+    assert band["lat_min"] < 46.0 < band["lat_max"]
+    assert g.in_ring((46.0, lon), spot)
+    assert not g.in_ring((36.2, 44.0), spot)  # Erbil

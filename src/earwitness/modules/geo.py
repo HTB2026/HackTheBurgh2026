@@ -660,34 +660,72 @@ class Geo:
             if inventory.get("stars_visible"):
                 out.progress(0.36, "identifying the stars in the sky")
                 # Full resolution for photos: faint stars vanish when scaled down.
-                night = (
-                    ctx.image_scaled(3000)
-                    if still
-                    else max((f for _, f in frames), key=_sharpness)
-                )
+                # The first frame, because the inventory's horizon refers to it.
+                night = ctx.image_scaled(3000) if still else frames[0][1]
                 solved = await asyncio.to_thread(geo_deep.solve_stars, night)
 
                 if solved:
-                    tilt = inventory.get("camera_tilt_deg")
-                    altitude = (
-                        float(tilt) + solved["above_centre_deg"]
-                        if isinstance(tilt, (int, float))
-                        else None
+                    star_note = (
+                        f"Stars: identified offline ({solved['matches']} stars matched, field centre "
+                        f"RA {solved['ra']:.1f}°, Dec {solved['dec']:+.1f}°)"
                     )
-                    found = geo_deep.star_zones(
-                        solved["ra"], solved["dec"], altitude, when
+                    left, right = (
+                        inventory.get("horizon_left"),
+                        inventory.get("horizon_right"),
                     )
-                    zones += found
-                    clues.append(
-                        f"The star field was identified (centre RA {solved['ra']:.1f}°, Dec {solved['dec']:+.1f}°, "
-                        f"{solved['matches']} stars matched): {'; '.join(z['label'] for z in found)}."
-                    )
-                    notes.append(
-                        f"Stars: plate-solved offline ({solved['matches']} stars, RA {solved['ra']:.1f}°, "
-                        f"Dec {solved['dec']:+.1f}°); "
-                        + "; ".join(z["label"] for z in found)
-                        + "."
-                    )
+                    fix = None
+
+                    if all(
+                        isinstance(v, (int, float)) and 0 < v < 1 for v in (left, right)
+                    ):
+                        gray = cv2.cvtColor(night, cv2.COLOR_RGB2GRAY)
+                        horizon = geo_deep.refine_horizon(
+                            gray, float(left), float(right)
+                        )
+                        fix = geo_deep.zenith_from_stars(
+                            solved, night.shape[1], night.shape[0], horizon
+                        )
+
+                    if fix is not None and fix["field_altitude"] > -5:
+                        found = geo_deep.star_fix_zones(fix, when)
+                        zones += found
+                        lat = fix["latitude"]
+                        clues.append(
+                            f"Measured from the stars and the horizon (no metadata involved): the celestial pole stands "
+                            f"{abs(lat):.0f}° {'above' if lat >= 0 else 'below'} the horizon, so the camera was at about "
+                            f"{abs(lat):.0f}°{'N' if lat >= 0 else 'S'} latitude (±4°). Only propose places at that latitude."
+                            + (
+                                f" With the capture time: {found[1]['label']}."
+                                if len(found) > 1
+                                else ""
+                            )
+                        )
+                        notes.append(
+                            f"{star_note}; with the horizon, the zenith points at Dec {lat:+.1f}°, "
+                            f"so the latitude is about {lat:.0f}° (±4°). "
+                            + "; ".join(z["label"] for z in found)
+                            + "."
+                        )
+                    else:
+                        # No usable horizon: the declination alone bounds the latitude.
+                        tilt = inventory.get("camera_tilt_deg")
+                        altitude = (
+                            float(tilt) + solved["above_centre_deg"]
+                            if isinstance(tilt, (int, float))
+                            else None
+                        )
+                        found = geo_deep.star_zones(
+                            solved["ra"], solved["dec"], altitude, when
+                        )
+                        zones += found
+                        clues.append(
+                            f"The star field was identified: {'; '.join(z['label'] for z in found)}."
+                        )
+                        notes.append(
+                            f"{star_note}; no clear horizon, so only a broad band: "
+                            + "; ".join(z["label"] for z in found)
+                            + "."
+                        )
                 else:
                     notes.append(
                         "Stars: visible, but the star field could not be identified "
@@ -821,7 +859,15 @@ class Geo:
                     item["checks"] += geo_deep.osm_checks(found)
 
                 if rows is not None:
-                    sky = await geo_deep.skyline_check(client, rows, aspect, lat, lon)
+                    sky = await geo_deep.skyline_check(
+                        client,
+                        rows,
+                        aspect,
+                        lat,
+                        lon,
+                        hilly=inventory.get("horizon")
+                        in ("natural_hills", "mountains"),
+                    )
 
                     if sky:
                         item["skyline"] = {
