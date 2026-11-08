@@ -6,6 +6,7 @@ import type { AiProvider } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
 import { ago, dateShort, mmss } from '../lib/format'
 import { useCaseMeta } from '../lib/caseMeta'
+import { HeroField } from './HeroField'
 import { VERDICT, verdictOf, type Verdict } from '../lib/plain'
 import { Alert, Empty, Icon, Redacted, SectionTitle } from './ui/ui'
 
@@ -83,6 +84,10 @@ export function Landing({ examine }: { examine?: boolean }) {
   // Older backends need their events fetched to determine the verdict.
   const needMeta = useMemo(() => (cases ? cases.filter((c) => c.verdict === undefined) : null), [cases])
   const meta = useCaseMeta(needMeta)
+  // The newest finished recording shapes the homepage particle field.
+  const heroCase = useMemo(() => (cases ? cases.filter((c) => c.status === 'done' && c.kind !== 'image').slice(0, 1) : null), [cases])
+  const heroMeta = useCaseMeta(heroCase, 1)
+  const heroPeaks = heroCase?.[0] ? (heroMeta[heroCase[0].id]?.peaks ?? null) : null
   const verdictFor = (c: CaseSummary): Verdict | undefined =>
     c.status !== 'done' ? 'running' : c.verdict !== undefined ? (c.verdict ? verdictOf(c.verdict) : 'unknown') : meta[c.id]?.verdict
   const [over, setOver] = useState(false)
@@ -176,6 +181,7 @@ export function Landing({ examine }: { examine?: boolean }) {
       />
 
       <section className="home-intro">
+        <HeroField peaks={heroPeaks} />
         <h1>Every photo and video is a witness.</h1>
         <p>Drop in a video or photograph to examine what it can reveal.</p>
       </section>

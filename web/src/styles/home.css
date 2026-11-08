@@ -3,7 +3,23 @@
   padding-top: 20px;
 }
 .home-intro {
+  position: relative;
   padding: 20px 0 18px;
+}
+.home-intro > :not(.hero-field) {
+  position: relative;
+  z-index: 1;
+}
+/* WebGPU particle field behind the heading (absent without WebGPU). */
+.hero-field {
+  position: absolute;
+  inset: -6px 0 -6px 0;
+  width: 100%;
+  height: calc(100% + 12px);
+  pointer-events: none;
+  opacity: 0.6;
+  -webkit-mask-image: linear-gradient(90deg, transparent 0, #000 35%, #000 85%, transparent 100%);
+  mask-image: linear-gradient(90deg, transparent 0, #000 35%, #000 85%, transparent 100%);
 }
 .home-intro h1 {
   font-size: 30px;
