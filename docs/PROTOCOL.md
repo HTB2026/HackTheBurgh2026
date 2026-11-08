@@ -19,6 +19,8 @@ built SPA (`web/dist`) is served by the same server at `/`. In dev, Vite proxies
 
 `CaseSummary = {id, filename, created (unix s), status: queued|running|done|interrupted, findings, warnings, case: CaseInfo|null}`
 
+On startup the server reruns every case that has no `done` event (status `interrupted`, then `queued`), one at a time and from the start: its listeners get a `reset`, and the new run logs why right after its `case` event. Uploads still in progress at the restart (only `evidence.*.part` on disk) are deleted.
+
 ## WebSocket `/ws/cases/{id}`
 
 On connect the server replays every event so far, then streams new ones live.

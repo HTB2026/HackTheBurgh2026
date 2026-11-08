@@ -242,3 +242,39 @@ def test_weather_reads_negations():
     assert _seen_conditions("It is not raining; clear sky.") == (False, True)
     assert _seen_conditions("Heavy rain, wet pavement, umbrellas.") == (True, False)
     assert _seen_conditions("Overcast evening.") == (False, False)
+
+
+def test_interrupted_cases_resume_after_restart(tmp_path, planted):
+    """A restart reruns half-analysed cases and drops half-received uploads."""
+    root = str(tmp_path / "cases")
+    before = CaseStore(root)
+    cut_short = before.create(planted, {})
+    shutil.copy(planted, cut_short.evidence_path)
+    cut_short.emit({"type": "log", "module": "core", "message": "before the restart"})
+    half_upload = before.create("clip.mp4", {})
+
+    with open(half_upload.evidence_path + ".part", "wb") as handle:
+        handle.write(b"\0" * 100)
+
+    async def go():
+        after = CaseStore(root)
+        assert half_upload.id not in after.cases
+        assert not os.path.exists(half_upload.workdir)
+        case = after.cases[cut_short.id]
+        assert case.status == "interrupted"
+        await after.resume_interrupted()
+
+        return case
+
+    case = asyncio.run(go())
+
+    assert case.status == "done"
+    assert case.events[0]["type"] == "case"
+    assert "restarted" in case.events[1]["message"]
+    assert not any(e.get("message") == "before the restart" for e in case.events)
+
+    with open(os.path.join(case.workdir, "events.jsonl")) as handle:
+        events = [json.loads(line) for line in handle]
+
+    assert events[-1]["type"] == "done"
+    assert [e["seq"] for e in events] == list(range(len(events)))

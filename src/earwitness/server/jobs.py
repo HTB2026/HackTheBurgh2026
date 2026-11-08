@@ -35,6 +35,8 @@ class Case:
         self.status = "queued"
         self.ctx: CaseContext | None = None
         self.task: asyncio.Task[None] | None = None
+        # Logged right after the `case` event of the next run (e.g. why it restarted).
+        self.note: str | None = None
         self._log = None
 
     @property
@@ -108,6 +110,13 @@ class CaseStore:
                 meta = json.load(handle)
 
             case = Case(case_id, workdir, meta["filename"], meta.get("options", {}))
+
+            if not os.path.isfile(case.evidence_path):
+                # The upload was cut off (the file is still `.part`, or was never
+                # written): the sender is gone, so there is nothing to resume.
+                shutil.rmtree(workdir, ignore_errors=True)
+                continue
+
             case.created = meta.get("created", case.created)
             events_path = os.path.join(workdir, "events.jsonl")
 
@@ -161,6 +170,49 @@ class CaseStore:
 
     def start(self, case: Case, *, only: list[str] | None = None) -> None:
         case.task = asyncio.create_task(run_case(case, only=only))
+
+    def restart(self, case: Case, *, only: list[str] | None = None) -> None:
+        """Forget a case's events and run its analysis again from the start."""
+        case.events.clear()
+
+        for queue in list(case.listeners):
+            queue.put_nowait({"type": "reset", "seq": -1})
+
+        if case._log is not None:
+            case._log.close()
+            case._log = None
+
+        events = os.path.join(case.workdir, "events.jsonl")
+
+        if os.path.isfile(events):
+            os.remove(events)
+
+        case.status = "queued"
+        self.start(case, only=only)
+
+    async def resume_interrupted(self) -> None:
+        """Rerun, one at a time, every case whose analysis a restart cut short.
+
+        Module results live in memory while a case runs, so a case cannot pick
+        up where it stopped; it starts over. AI answers are cached in the case
+        folder, so a rerun does not pay for them twice.
+        """
+        waiting = [c for c in self.cases.values() if c.status == "interrupted"]
+
+        for case in waiting:
+            case.status = "queued"
+
+        for case in waiting:
+            # Deleted, or rerun by hand, while it waited its turn.
+            if self.cases.get(case.id) is not case or case.task is not None:
+                continue
+
+            case.note = "The server restarted during the analysis, so it was run again from the start."
+            self.restart(case)
+
+            # wait() neither raises the case's error nor its cancellation (a
+            # delete), so one broken case does not stop the rest.
+            await asyncio.wait([case.task])
 
 
 def _image_proxy(case: Case, ctx: CaseContext) -> str | None:
@@ -411,6 +463,10 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
             },
         }
     )
+
+    if case.note:
+        case.emit({"type": "log", "module": "core", "message": case.note})
+        case.note = None
 
     for module in modules:
         case.emit(

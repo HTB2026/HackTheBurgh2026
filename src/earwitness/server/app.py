@@ -43,10 +43,12 @@ async def _lifespan(_: FastAPI) -> AsyncIterator[None]:
     await db.migrate()
     await db.open_pool()
     await store.sync_index()
+    resume = asyncio.create_task(store.resume_interrupted())
 
     try:
         yield
     finally:
+        resume.cancel()
         await db.close_pool()
 
 
@@ -133,8 +135,14 @@ async def upload(
 
     case = store.create(file.filename or "evidence.mp4", options)
 
-    with open(case.evidence_path, "wb") as handle:
+    # Written aside and renamed when complete, so a restart mid-upload leaves no
+    # half file that looks like evidence (see CaseStore._load_existing).
+    partial = case.evidence_path + ".part"
+
+    with open(partial, "wb") as handle:
         await asyncio.to_thread(shutil.copyfileobj, file.file, handle, 1 << 20)
+
+    os.replace(partial, case.evidence_path)
 
     store.start(case)
 
@@ -219,19 +227,7 @@ async def rerun(
         case.options["ai_provider"] = _ai_provider(ai_provider)
         store.save_meta(case)
 
-    case.events.clear()
-
-    for queue in list(case.listeners):
-        queue.put_nowait({"type": "reset", "seq": -1})
-
-    events = os.path.join(case.workdir, "events.jsonl")
-
-    if os.path.isfile(events):
-        os.remove(events)
-
-    case._log = None
-    case.status = "queued"
-    store.start(case, only=modules)
+    store.restart(case, only=modules)
 
     return case.summary()
 
