@@ -3,10 +3,36 @@ import type { Artifact } from '../../lib/types'
 import { useElementSize } from '../../lib/hooks'
 import { usePlayback, usePlayhead } from '../../lib/playback'
 import { niceTicks, num } from '../../lib/format'
+import { useGpu } from '../../lib/gpu'
+import { Waterfall } from './Waterfall'
 
 const fmtHz = (f: number) => (f >= 1000 ? `${+(f / 1000).toFixed(1)}k` : `${Math.round(f)}`)
 
 export function Spectrogram({ a, height = 240 }: { a: Artifact; height?: number }) {
+  const gpuState = useGpu()
+  const gpu = gpuState === 'loading' ? null : gpuState
+  const [mode, setMode] = useState<'2d' | '3d'>('2d')
+  const switcher = gpu && a.url && (
+    <div className="tabs spec-mode" role="radiogroup" aria-label="Spectrogram view">
+      {(['2d', '3d'] as const).map((m) => (
+        <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)} data-tip={m === '3d' ? 'Loudness as height: drag to turn, scroll to zoom (WebGPU)' : 'Flat view'}>
+          {m.toUpperCase()}
+        </button>
+      ))}
+    </div>
+  )
+  if (gpu && mode === '3d') {
+    return (
+      <div className="chart spec-3d">
+        {switcher}
+        <Waterfall gpu={gpu} a={a} height={Math.max(320, height + 120)} />
+      </div>
+    )
+  }
+  return <Spectrogram2D a={a} height={height} switcher={switcher} />
+}
+
+function Spectrogram2D({ a, height, switcher }: { a: Artifact; height: number; switcher: React.ReactNode }) {
   const [ref, size] = useElementSize<HTMLDivElement>()
   const [hover, setHover] = useState<{ x: number; y: number } | null>(null)
   const pb = usePlayback()
@@ -25,6 +51,7 @@ export function Spectrogram({ a, height = 240 }: { a: Artifact; height?: number 
   const at = hover && { t: t0 + ((hover.x - M.l) / W) * (t1 - t0), f: f0 + (1 - (hover.y - M.t) / H) * (f1 - f0) }
   return (
     <div className="chart" ref={ref}>
+      {switcher}
       {size.width > 0 && a.url && (
         <svg width={size.width} height={height} role="img" aria-label={a.title}>
           <image href={a.url} x={M.l} y={M.t} width={W} height={H} preserveAspectRatio="none" />
