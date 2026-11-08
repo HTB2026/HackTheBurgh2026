@@ -5,7 +5,7 @@ import type { CaseState, ModuleState } from '../../lib/state'
 import type { Facts } from '../../lib/facts'
 import { usePlayback, usePlayhead } from '../../lib/playback'
 import { useElementSize } from '../../lib/hooks'
-import { bytes, mmss, niceDate } from '../../lib/format'
+import { bytes, dateShort, mmss, niceDate } from '../../lib/format'
 import { artifactTab, BULLET_LABEL, CONFIDENCE, GLOSSARY, modulePlain, SEVERITY, TABS, type TabKey } from '../../lib/plain'
 import { CopyButton, Icon, SevChip, SourceChip, Term } from '../ui/ui'
 import { DataView, JsonTree } from '../ui/Data'
@@ -523,6 +523,22 @@ export function EvidenceFile({ state, facts, caseId }: { state: CaseState; facts
           </div>
         ))}
       </dl>
+      <h4 className="sub">Who has handled it</h4>
+      <p className="muted small">Every upload and re-run, by the signed-in account that asked for it. The fingerprints above show the file itself never changed.</p>
+      {info.history && info.history.length > 0 ? (
+        <ol className="custody">
+          {info.history.map((h, i) => (
+            <li key={i}>
+              <span className="mono faint">{dateShort(h.at)}</span>{' '}
+              <b>{h.action === 'uploaded' ? 'Uploaded' : h.action === 'reran' ? (h.modules?.length ? `Re-ran ${h.modules.join(', ')}` : 'Re-ran every check') : h.action}</b>{' '}
+              by {h.by?.name ?? 'a signed-in user'}
+              {h.action === 'reran' && h.ai_provider ? <span className="faint"> (AI: {h.ai_provider})</span> : null}
+            </li>
+          ))}
+        </ol>
+      ) : (
+        <p className="faint small">Not recorded: this case was uploaded before logins were required.</p>
+      )}
       {info.container && (
         <>
           <h4 className="sub">Container</h4>

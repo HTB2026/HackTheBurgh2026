@@ -58,6 +58,26 @@ export interface CaseInfo {
   }
   streams?: StreamInfo[]
   tags?: Record<string, string | number>
+  /** Who uploaded it; null on cases from before logins. */
+  owner?: Owner | null
+  history?: CustodyEntry[]
+}
+
+/** A signed-in person as public pages show them: no email, a hashed id. */
+export interface Owner {
+  id: string
+  /** null for uploads made before names were recorded. */
+  name: string | null
+  picture?: string | null
+}
+
+/** One line of a case's handling record (kept across reruns). */
+export interface CustodyEntry {
+  action: 'uploaded' | 'reran' | string
+  at: number
+  by: Owner | null
+  modules?: string[]
+  ai_provider?: AiProvider | null
 }
 
 export interface StreamInfo {
@@ -105,6 +125,8 @@ export interface CaseSummary {
   place_confidence?: string | null
   /** AI provider chosen for this case; null means the server default. */
   ai_provider?: AiProvider | null
+  owner?: Owner | null
+  history?: CustodyEntry[]
   case: CaseInfo | null
 }
 

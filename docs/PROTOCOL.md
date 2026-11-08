@@ -12,12 +12,21 @@ built SPA (`web/dist`) is served by the same server at `/`. In dev, Vite proxies
 | GET | `/api/cases` | | `[CaseSummary]`, newest first (includes `verdict`, `summary_plain`, `ai_provider`, and `place` / `place_confidence` (the plain "where" answer, null when unknown) once the brief exists) |
 | POST | `/api/cases` | multipart `file`; optional query `ai_provider` (`openai`\|`gemini`\|`ollama`, must be in `health.ai.providers`, else 400) | `CaseSummary` (analysis starts immediately) |
 | GET | `/api/cases/{id}` | | `{summary: CaseSummary, events: [Event]}` (full replay) |
-| DELETE | `/api/cases/{id}` | | `{deleted}` |
-| POST | `/api/cases/{id}/rerun` | optional query `ai_provider` (switches the case's provider and saves it) | `CaseSummary` |
+| GET | `/api/me` | bearer token | `{id, name, picture, admin}`: the caller as cases record them |
+| DELETE | `/api/cases/{id}` | bearer token; owner or admin, else 403 | `{deleted}` |
+| POST | `/api/cases/{id}/rerun` | bearer token; owner or admin, else 403. Optional query `ai_provider` (switches the case's provider and saves it) | `CaseSummary` |
 | GET | `/api/cases/{id}/files/{path}` | | artifact files (PNG/JPG/MP4); URLs arrive ready-made in events |
 | POST | `/api/cases/{id}/enhance` | JSON `{time_s, x, y, w, h, frames?}`; x,y,w,h are 0..1 fractions of the video frame | `{single_url, enhanced_url, frames_used, scale, source_px:[w,h], time_s}` |
 
-`CaseSummary = {id, filename, created (unix s), status: queued|running|done|interrupted, findings, warnings, case: CaseInfo|null}`
+`CaseSummary = {id, filename, created (unix s), status: queued|running|done|interrupted, findings, warnings, owner, history, case: CaseInfo|null}`
+
+`owner = {id, name, picture} | null` is whoever uploaded the case. `id` is a hash
+of their Auth0 user id (pages are public, so neither that id nor the email is
+shown); `name` is null for cases uploaded before names were recorded, and the
+whole owner is null for cases from before logins (anyone signed in may change
+those). `history = [{action: "uploaded"|"reran", at (unix s), by: owner-shaped,
+modules?, ai_provider?}]` is the handling record. Both live in `case.json`, so a
+rerun keeps them, and both are repeated in the `case` event.
 
 On startup the server reruns every case that has no `done` event (status `interrupted`, then `queued`), one at a time and from the start: its listeners get a `reset`, and the new run logs why right after its `case` event. Uploads still in progress at the restart (only `evidence.*.part` on disk) are deleted.
 

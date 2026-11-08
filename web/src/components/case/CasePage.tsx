@@ -5,9 +5,10 @@ import { MediaKindContext, RegionContext, RegionFocus } from '../../lib/region'
 import type { CaseState } from '../../lib/state'
 import { isTerminal } from '../../lib/state'
 import { api } from '../../lib/api'
-import { mmss } from '../../lib/format'
 import { deriveFacts, type Facts } from '../../lib/facts'
 import { useHealth } from '../../lib/health'
+import { canChange, ownerName, useAuth } from '../../lib/auth'
+import { ago, dateShort, mmss } from '../../lib/format'
 import { mediaNoun, modulePlain, VERDICT } from '../../lib/plain'
 import { mockName } from '../../lib/mock'
 import { Alert, Badge, Icon } from '../ui/ui'
@@ -309,6 +310,9 @@ function CaseHead({
   const [aiProvider, setAiProvider] = useState<AiProvider | null>(null)
   const chosen = aiProvider ?? info?.ai_provider ?? null
   const still = facts.kind === 'image'
+  const auth = useAuth()
+  const may = canChange(auth, info?.owner)
+  const uploaded = info?.history?.find((h) => h.action === 'uploaded')
   return (
     <section className={`case-head v-${facts.verdict}`}>
       {info?.thumb_url && <div className="cover" style={{ backgroundImage: `url(${info.thumb_url})` }} />}
@@ -348,6 +352,16 @@ function CaseHead({
                   {facts.faces.recognisable ? `, ${facts.faces.recognisable} recognisable` : ''}
                 </Badge>
               )}
+              {info.owner && (
+                <Badge
+                  icon="user"
+                  accent="blue"
+                  tip={`Uploaded by ${ownerName(info.owner)}${uploaded ? ` on ${dateShort(uploaded.at)}` : ''}. Only they can re-run or delete it.`}
+                >
+                  {info.owner.name ?? 'Signed-in user'}
+                  {uploaded ? ` · ${ago(uploaded.at)}` : ''}
+                </Badge>
+              )}
               {still && facts.generator && (
                 <Badge icon="robot" accent="purple" tip="The file declares the generator that made it">
                   {facts.generator}
@@ -366,12 +380,20 @@ function CaseHead({
             )}
             {!mockName() && (
               <>
-                <AiPicker health={health} value={chosen} onChange={setAiProvider} compact />
+                {may !== false && <AiPicker health={health} value={chosen} onChange={setAiProvider} compact />}
                 <button
                   className="icon-btn"
                   onClick={() => onRerun(aiProvider)}
-                  disabled={facts.running}
-                  data-tip={aiProvider && aiProvider !== info?.ai_provider ? `Run every check again with ${AI_LABEL[aiProvider]}` : 'Run every check again'}
+                  disabled={facts.running || may === false}
+                  data-tip={
+                    may === false
+                      ? `Only ${ownerName(info?.owner)}, who uploaded it, can re-run this case`
+                      : may === 'login'
+                        ? 'Log in to run every check again'
+                        : aiProvider && aiProvider !== info?.ai_provider
+                          ? `Run every check again with ${AI_LABEL[aiProvider]}`
+                          : 'Run every check again'
+                  }
                   aria-label="Rerun"
                 >
                   <Icon name="rotate-right" />
