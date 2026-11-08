@@ -1,27 +1,26 @@
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useCaseStream } from '../../lib/useCaseStream'
-import { Playback, PlaybackContext } from '../../lib/playback'
-import { MediaKindContext, RegionContext, RegionFocus } from '../../lib/region'
-import type { CaseState } from '../../lib/state'
-import { isTerminal } from '../../lib/state'
+import { Playback, PlaybackContext, usePlayback } from '../../lib/playback'
+import { MediaKindContext, RegionContext, RegionFocus, useRegionFocus } from '../../lib/region'
 import { api } from '../../lib/api'
 import { mmss } from '../../lib/format'
-import { deriveFacts, type Facts } from '../../lib/facts'
+import { deriveFacts, rankFindings, type Facts } from '../../lib/facts'
 import { useHealth } from '../../lib/health'
 import { mediaNoun, modulePlain, VERDICT } from '../../lib/plain'
-import { mockName } from '../../lib/mock'
-import { Badge, Icon } from '../ui/ui'
+import type { CaseState } from '../../lib/state'
+import { boxOf, type Finding, type Artifact } from '../../lib/types'
+import { Icon, SourceChip } from '../ui/ui'
+import { DataView } from '../ui/Data'
 import { Player } from './Player'
-import { PhotoStage, RegionList } from './PhotoStage'
+import { PhotoStage } from './PhotoStage'
 import { FindingsBoard } from './Findings'
+import { ArtifactSection } from './Artifacts'
 import { GeoBoard, geoFinding } from './GeoBoard'
 import { Reveal } from './Reveal'
-import { Answers, Detail, EvidenceFile, Exhibits, exhibitItems, hasNotes, KeyMoments, MapSection, mapPoints, MethodSection, NotesSection } from './Sections'
+import { EvidenceFile, Exhibits, MapSection, mapPoints, MethodSection, NotesSection } from './Sections'
 
 export type SectionKey = 'findings' | 'exhibits' | 'geo' | 'map' | 'notes' | 'file' | 'method'
 export const SECTIONS: SectionKey[] = ['findings', 'exhibits', 'geo', 'map', 'notes', 'file', 'method']
-
-/** Old tab links keep working: they open the matching section. */
 export function sectionFor(key: string | undefined): { section: SectionKey | null; topic?: string } {
   if (!key || key === 'overview') return { section: null }
   if ((SECTIONS as string[]).includes(key)) return { section: key as SectionKey }
@@ -29,7 +28,70 @@ export function sectionFor(key: string | undefined): { section: SectionKey | nul
   if (['timeline', 'sound', 'light', 'picture', 'compression', 'hidden', 'people', 'text'].includes(key)) return { section: 'exhibits', topic: key }
   return { section: null }
 }
+type Tab = 'findings' | 'exhibits' | 'location' | 'file' | 'checks'
+const tabFor = (s: SectionKey): Tab => s === 'geo' || s === 'map' ? 'location' : s === 'method' ? 'checks' : s === 'notes' ? 'findings' : s
 
+// Group nearby cut and sound-break observations as one event, while leaving unrelated claims distinct.
+function eventTopic(f: Finding): string {
+  const text = `${f.title} ${f.tags?.join(' ')} ${f.module}`.toLowerCase()
+  if (/cut|splice|break|discontinuit|missing frames|duplicate frames|room.tone/.test(text)) return 'edit-event'
+  if (/synthetic|generator|generated|c2pa/.test(text)) return 'generator'
+  if (/keypad/.test(text)) return 'keypad'
+  if (/ultrasonic|high.frequency tone/.test(text)) return 'tone'
+  if (/hidden|appended|payload/.test(text)) return 'hidden'
+  if (/location|geolocation|\bgps\b/.test(text)) return 'location'
+  if (/grid|\benf\b|clock|dated/.test(text)) return 'time'
+  return f.module
+}
+function keyFindings(findings: Finding[]): Finding[][] {
+  const eligible = rankFindings(findings).filter((f) => {
+    const t = `${f.title} ${f.tags?.join(' ')}`.toLowerCase()
+    if (/no (sign|signal|evidence|detect)|not detect|no .*found|check complete/.test(t)) return false
+    if (f.module === 'pulse' || (f.module === 'provenance' && !/editor|history|hidden|serial|owner/.test(t))) return false
+    return f.severity === 'critical' || f.severity === 'warning' || /hidden|appended|payload|synthetic|generator|text|transcript|speech|recognis|keypad|tone/.test(t)
+  })
+  const groups: Finding[][] = []
+  for (const f of eligible) {
+    const topic = eventTopic(f)
+    const group = groups.find((g) => eventTopic(g[0]) === topic && (topic !== 'edit-event' || (f.time_s != null && g[0].time_s != null && Math.abs(f.time_s - g[0].time_s) <= 2)))
+    if (group) group.push(f)
+    else groups.push([f])
+  }
+  groups.sort((a, b) => {
+    const score = (g: Finding[]) => (eventTopic(g[0]) === 'edit-event' && g.length > 1 ? 10 : 0) + (eventTopic(g[0]) === 'generator' ? 9 : 0) + (g[0].severity === 'critical' ? 6 : g[0].severity === 'warning' ? 4 : 1)
+    return score(b) - score(a)
+  })
+  return groups.slice(0, 3)
+}
+function relatedArtifacts(group: Finding[], artifacts: Artifact[]): Artifact[] {
+  const modules = [...new Set(group.map((f) => f.module))]
+  const candidates = artifacts.filter((a) => modules.includes(a.module) && !['brief', 'dossier', 'markers', 'waveform', 'filmstrip'].includes(a.kind) && (a.kind !== 'json' || eventTopic(group[0]) === 'generator') && (a.time_s == null || group.some((f) => f.time_s != null && Math.abs(a.time_s! - f.time_s) <= 3)))
+  const priority = (a: Artifact) => /difference|noise_floor/.test(a.name) ? 0 : 1
+  return modules.flatMap((module) => candidates.filter((a) => a.module === module).sort((a, b) => priority(a) - priority(b)).slice(0, 1)).slice(0, 3)
+}
+function KeyFinding({ group, artifacts, state, onOpen }: { group: Finding[]; artifacts: Artifact[]; state: CaseState; onOpen: (id: string) => void }) {
+  const [open, setOpen] = useState(false)
+  const pb = usePlayback()
+  const rf = useRegionFocus()
+  const f = group[0]
+  const related = relatedArtifacts(group, artifacts)
+  const combined = eventTopic(f) === 'edit-event' && group.some((item) => item.module === 'timeline') && group.some((item) => item.module === 'spectrum')
+  const qualifier = typeof f.data?.confidence === 'string' ? f.data.confidence : null
+  const caveat = f.detail.split(/(?<=[.!?])\s/).find((sentence) => /\b(weak|uncertain|estimate|limited|may not|cannot|not proof)\b/i.test(sentence) && !/synthetic preview/i.test(sentence))
+  return <article className="key-finding">
+    <div className="key-finding-title"><b>{combined ? `Picture and sound both change at ${mmss(f.time_s ?? 0)}` : f.title}</b><SourceChip kind={f.kind} /></div>
+    {(qualifier || caveat) && <p>{qualifier && `Confidence: ${qualifier}.`}{qualifier && caveat && ' '}{caveat}</p>}
+    <button className="link small" onClick={() => setOpen(!open)} aria-expanded={open}>{open ? 'Hide evidence' : 'Show evidence'}</button>
+    {open && <div className="key-evidence">
+      {group.map((item) => <div key={item.id} className="key-evidence-item"><p>{item.detail}</p><div className="evidence-actions">
+        {item.time_s != null && state.info?.kind !== 'image' && <button className="timebtn" onClick={() => pb.seek(item.time_s!)}><Icon name="play" /> {mmss(item.time_s)}</button>}
+        {boxOf(item) && <button className="timebtn" onClick={() => rf.focus(boxOf(item)!, item.title)}><Icon name="vector-square" /> View region</button>}
+        <button className="link small" onClick={() => onOpen(item.id)}>Finding {item.id}</button>
+      </div><details><summary>Measurements</summary><DataView data={item.data} /></details></div>)}
+      {related.map((a) => <ArtifactSection key={a.id} a={a} modules={state.modules} />)}
+    </div>}
+  </article>
+}
 export function CasePage({ caseId, section, onSection }: { caseId: string; section: string | undefined; onSection: (s: SectionKey | null) => void }) {
   const [nonce, setNonce] = useState(0)
   const { state, conn } = useCaseStream(caseId, nonce)
@@ -37,367 +99,71 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   const rf = useMemo(() => new RegionFocus(), [])
   const { health } = useHealth()
   const facts = useMemo(() => deriveFacts(state, health?.openai ?? null), [state, health?.openai])
-  const [open, setOpen] = useState<Set<SectionKey>>(() => new Set(mockName() && new URLSearchParams(location.search).has('extras') ? SECTIONS : []))
+  const [technical, setTechnical] = useState(false)
+  const [tab, setTab] = useState<Tab>('findings')
   const [focus, setFocus] = useState<string | null>(null)
+  const [revealing, setRevealing] = useState(false)
   const info = state.info
   const still = facts.kind === 'image'
-  const noun = mediaNoun(facts.kind)
   const points = useMemo(() => mapPoints(state, facts), [state, facts])
-  const locationAnswered = facts.answers.some((a) => a.key === 'where' && a.confidence !== 'unknown') || !!facts.gps
-  const [mapDefaulted, setMapDefaulted] = useState(false)
   const geo = geoFinding(state)
-  const dossier = state.artifacts['brief:dossier'] ?? state.artifactOrder.map((id) => state.artifacts[id]).find((a) => a.kind === 'dossier') ?? null
-  const [revealing, setRevealing] = useState(false)
-
+  const arts = state.artifactOrder.map((id) => state.artifacts[id])
+  const dossier = state.artifacts['brief:dossier'] ?? arts.find((a) => a.kind === 'dossier') ?? null
+  const groups = useMemo(() => keyFindings(state.findings), [state.findings])
   useEffect(() => {
-    if (!mockName()) return
-    const expand = (event: Event) => setOpen(new Set((event as CustomEvent<boolean>).detail ? SECTIONS : []))
+    const expand = (event: Event) => setTechnical(!!(event as CustomEvent<boolean>).detail)
     const replay = () => setNonce((n) => n + 1)
-    window.addEventListener('mock-sections', expand)
-    window.addEventListener('mock-replay', replay)
+    window.addEventListener('mock-sections', expand); window.addEventListener('mock-replay', replay)
     return () => { window.removeEventListener('mock-sections', expand); window.removeEventListener('mock-replay', replay) }
   }, [])
-
-  useEffect(() => {
-    if (info?.duration_s) pb.set({ duration: info.duration_s })
-  }, [pb, info?.duration_s])
-  useEffect(() => {
-    document.title = info ? `${VERDICT[facts.verdict].short} · ${info.filename} · EARWITNESS` : 'EARWITNESS'
-  }, [info, facts.verdict])
-
-  // The map opens by itself only when the case has a location answer.
-  // The geolocation board opens by itself whenever there is a geo finding.
-  useEffect(() => {
-    if (mapDefaulted || facts.running) return
-    if (geo) {
-      setMapDefaulted(true)
-      setOpen((o) => new Set(o).add('geo'))
-    } else if (points.length) {
-      setMapDefaulted(true)
-      if (locationAnswered) setOpen((o) => new Set(o).add('map'))
-    }
-  }, [points.length, locationAnswered, facts.running, mapDefaulted, !!geo])
-
-  // Deep link: #/case/{id}/{section} opens and scrolls to that item.
+  useEffect(() => { if (info?.duration_s) pb.set({ duration: info.duration_s }) }, [pb, info?.duration_s])
+  useEffect(() => { document.title = info ? `${VERDICT[facts.verdict].short} · ${info.filename} · EARWITNESS` : 'EARWITNESS' }, [info, facts.verdict])
   useEffect(() => {
     if (!info) return
-    const { section: s, topic } = sectionFor(section)
-    const target = (s === 'map' || s === 'geo') && geo ? 'geo' : s === 'map' && !points.length ? 'exhibits' : s
+    const { section: target, topic } = sectionFor(section)
     if (!target) return
-    setOpen((o) => new Set(o).add(target))
-    const t = setTimeout(() => {
-      const el = (topic && document.getElementById(`topic-${topic}`)) || document.getElementById(`d-${target}`)
-      el?.scrollIntoView({ behavior: 'smooth', block: 'start' })
-    }, 60)
+    setTechnical(true); setTab(tabFor(target))
+    const t = setTimeout(() => (topic && document.getElementById(`topic-${topic}`) || document.getElementById('technical-details'))?.scrollIntoView({ behavior: 'smooth', block: 'start' }), 100)
     return () => clearTimeout(t)
-  }, [section, !!info, points.length, !!geo])
-
-  const toggle = (s: SectionKey) =>
-    setOpen((o) => {
-      const n = new Set(o)
-      if (n.has(s)) n.delete(s)
-      else n.add(s)
-      return n
-    })
-
-  const openFinding = useCallback(
-    (id: string) => {
-      setOpen((o) => new Set(o).add('findings'))
-      setFocus(null)
-      requestAnimationFrame(() => setFocus(id))
-      onSection('findings')
-    },
-    [onSection],
-  )
-
-  const arts = state.artifactOrder.map((id) => state.artifacts[id])
-  const ofKind = (k: string) => arts.filter((a) => a.kind === k)
-  const overlays = arts.filter((a) => a.kind === 'heatmap' && a.url && a.data?.overlay !== false)
-  const exhibits = exhibitItems(state, !!geo)
-  const notes = hasNotes(facts)
-
-  return (
-    <PlaybackContext.Provider value={pb}>
-      <RegionContext.Provider value={rf}>
-        <MediaKindContext.Provider value={facts.kind}>
-          <CaseHead
-            state={state}
-            facts={facts}
-            caseId={caseId}
-            onRerun={async () => {
-              await api.rerun(caseId)
-              setNonce((n) => n + 1)
-            }}
-          />
-          <main className="wrap case-page">
-            {state.error ? (
-              <p className="verdict-line err-line">This case could not be opened: {state.error}</p>
-            ) : !info ? (
-              <div className="skeleton" aria-label="Loading the case">
-                <span />
-                <span />
-                <span className="tall" />
-              </div>
-            ) : (
-              <>
-                <VerdictLine state={state} facts={facts} conn={conn} />
-                {dossier && (
-                  <button className="reveal-btn" onClick={() => setRevealing(true)}>
-                    <Icon name="eye" /> What this {noun} gives away
-                  </button>
-                )}
-
-                <section className="block">
-                  <div className={`video-col ${still ? 'photo-col' : ''}`}>
-                    <div className="video-frame">
-                      {still ? (
-                        <PhotoStage info={info} mediaUrl={state.mediaUrl} running={facts.running} overlays={overlays} findings={state.findings} height={600} onOpenFinding={openFinding} />
-                      ) : (
-                        <Player
-                          info={info}
-                          mediaUrl={state.mediaUrl}
-                          mediaReady={state.mediaReady}
-                          running={facts.running}
-                          heatmaps={ofKind('heatmap')}
-                          captions={ofKind('captions')}
-                          height={480}
-                        />
-                      )}
-                    </div>
-                    {still ? <RegionList findings={state.findings} onOpenFinding={openFinding} /> : <KeyMoments findings={state.findings} duration={info.duration_s} />}
-                  </div>
-                </section>
-
-                <section className="block">
-                  <h2 className="block-title">What we found</h2>
-                  {facts.running && !facts.answers.length ? (
-                    <p className="muted">The answers are written once every check has finished.</p>
-                  ) : (
-                    <Answers state={state} facts={facts} openFinding={openFinding} />
-                  )}
-                </section>
-
-                <section className="block">
-                  <h2 className="block-title">Details</h2>
-                  <div className="details">
-                    <Detail
-                      id="findings"
-                      title="Every finding"
-                      desc="Everything every check reported, most serious first, with all its measurements."
-                      count={state.findings.length}
-                      open={open.has('findings')}
-                      onToggle={() => toggle('findings')}
-                    >
-                      <FindingsBoard findings={state.findings} modules={state.modules} focus={focus} />
-                    </Detail>
-                    <Detail
-                      id="exhibits"
-                      title="Charts and exhibits"
-                      desc={
-                        still
-                          ? 'Tamper maps, compression tables, hidden-data dumps, face crops and charts, grouped by topic, each with how to read it. Maps marked overlay can be laid over the picture above.'
-                          : 'Spectrograms, charts, tamper maps and frames, grouped by topic, each with how to read it.'
-                      }
-                      count={exhibits.length}
-                      open={open.has('exhibits')}
-                      onToggle={() => toggle('exhibits')}
-                    >
-                      <Exhibits state={state} geoBoard={!!geo} />
-                    </Detail>
-                    {geo && (
-                      <Detail
-                        id="geo"
-                        title={`Where it was ${still ? 'taken' : 'filmed'}`}
-                        desc="Places the AI proposed from the pixels and sounds, each checked against real-world photos and satellite views."
-                        count={geo.data?.verified ? 'verified' : 'lead'}
-                        open={open.has('geo')}
-                        onToggle={() => toggle('geo')}
-                      >
-                        <GeoBoard state={state} facts={facts} points={points} />
-                      </Detail>
-                    )}
-                    {!geo && points.length > 0 && (
-                      <Detail
-                        id="map"
-                        title="Map"
-                        desc={facts.gps ? 'The GPS position stored in the file, and any estimate from the picture.' : `Where the picture suggests it was ${still ? 'taken' : 'filmed'}.`}
-                        count={points.length}
-                        open={open.has('map')}
-                        onToggle={() => toggle('map')}
-                      >
-                        <MapSection points={points} gps={facts.gps} />
-                      </Detail>
-                    )}
-                    {notes && (
-                      <Detail
-                        id="notes"
-                        title="Analyst’s note"
-                        desc="The written assessment, with links to the findings it cites."
-                        open={open.has('notes')}
-                        onToggle={() => toggle('notes')}
-                      >
-                        <NotesSection facts={facts} openFinding={openFinding} />
-                      </Detail>
-                    )}
-                    <Detail
-                      id="file"
-                      title="Evidence file"
-                      desc="Fingerprints, file facts, tracks, every stored label and the raw technical readout."
-                      open={open.has('file')}
-                      onToggle={() => toggle('file')}
-                    >
-                      <EvidenceFile state={state} facts={facts} caseId={caseId} />
-                    </Detail>
-                    <Detail
-                      id="method"
-                      title="How each check ran"
-                      desc="Every check, what it does, its limits, status and timing, plus the activity log."
-                      count={`${facts.checksDone}/${facts.checksTotal}`}
-                      open={open.has('method')}
-                      onToggle={() => toggle('method')}
-                    >
-                      <MethodSection state={state} facts={facts} />
-                    </Detail>
-                  </div>
-                </section>
-              </>
-            )}
-          </main>
-          {revealing && dossier && (
-            <Reveal
-              state={state}
-              dossier={dossier}
-              caseId={caseId}
-              onClose={(jump) => {
-                setRevealing(false)
-                if (jump) openFinding(jump)
-              }}
-            />
-          )}
-        </MediaKindContext.Provider>
-      </RegionContext.Provider>
-    </PlaybackContext.Provider>
-  )
+  }, [section, !!info])
+  const openFinding = useCallback((id: string) => { setTechnical(true); setTab('findings'); setFocus(null); requestAnimationFrame(() => setFocus(id)); onSection('findings') }, [onSection])
+  const incomplete = state.moduleOrder.filter((n) => ['error', 'skipped'].includes(state.modules[n]?.status)).length
+  const when = facts.answers.find((a) => a.key === 'when' && a.confidence !== 'unknown')
+  const where = facts.answers.find((a) => a.key === 'where' && a.confidence !== 'unknown')
+  const device = facts.answers.find((a) => a.key === 'device' && a.confidence !== 'unknown')
+  return <PlaybackContext.Provider value={pb}><RegionContext.Provider value={rf}><MediaKindContext.Provider value={facts.kind}>
+    <section className="case-head"><div className="wrap head-top"><div className="who-block"><a href="#/" className="case-label"><Icon name="arrow-left" /> Back to cases</a><h1 className="name" title={info?.filename}>{info?.filename ?? 'Opening…'}</h1>{info && <span className="muted small">{still ? 'Photo' : 'Video'}{!still && ` · ${mmss(info.duration_s)}`}</span>}</div><div className="head-icons">
+      {dossier && <button className="icon-btn" onClick={() => setRevealing(true)} aria-label="Open presentation" data-tip="Presentation"><Icon name="eye" /></button>}
+      <a className="icon-btn" href={api.reportUrl(caseId)} target="_blank" rel="noreferrer" aria-label="Report" data-tip="Printable report"><Icon name="file-lines" /></a>
+      {info?.original_url && <a className="icon-btn" href={info.original_url} target="_blank" rel="noreferrer" aria-label="Original file" data-tip="Original file"><Icon name="download" /></a>}
+      <button className="icon-btn" onClick={async () => { await api.rerun(caseId); setNonce((n) => n + 1) }} disabled={facts.running} aria-label="Rerun" data-tip="Run checks again"><Icon name="rotate-right" /></button>
+    </div></div></section>
+    <main className="wrap case-page">{state.error ? <p className="err-line">This case could not be opened: {state.error}</p> : !info ? <div className="skeleton" aria-label="Loading the case"><span /><span /><span className="tall" /></div> : <>
+      <VerdictLine state={state} facts={facts} conn={conn} incomplete={incomplete} />
+      <div className="investigation"><div className="video-col"><div className="video-frame">{still ? <PhotoStage info={info} mediaUrl={state.mediaUrl} running={facts.running} overlays={arts.filter((a) => a.kind === 'heatmap' && a.url && a.data?.overlay !== false)} findings={state.findings} height={600} onOpenFinding={openFinding} /> : <Player info={info} mediaUrl={state.mediaUrl} mediaReady={state.mediaReady} running={facts.running} heatmaps={arts.filter((a) => a.kind === 'heatmap')} captions={arts.filter((a) => a.kind === 'captions')} height={480} />}</div></div>
+      <section className="key-findings"><h2>Key findings</h2>{groups.map((g) => <KeyFinding key={g[0].id} group={g} artifacts={arts} state={state} onOpen={openFinding} />)}{!groups.length && <p className="muted">{facts.running ? 'Findings will appear as checks finish.' : 'No key findings to show.'}</p>}</section></div>
+      {(when || where || device || facts.recorded || facts.gps || facts.device) && <section className="fact-strip" aria-label="File facts">
+        {(when || facts.recorded) && <div><b>When</b><span>{when ? `${when.answer}${when.ai ? ' · AI estimate' : ''}` : `${facts.recorded} · file clock`}</span></div>}
+        {(where || facts.gps) && <div><b>Where</b><span>{where ? `${where.answer}${where.ai ? ' · AI estimate' : ''}` : `${facts.gps?.place ?? `${facts.gps?.lat}, ${facts.gps?.lon}`} · GPS metadata`}</span></div>}
+        {(device || facts.device) && <div><b>Device</b><span>{device ? `${device.answer}${device.ai ? ' · AI estimate' : ''}` : `${facts.device} · file metadata`}</span></div>}
+      </section>}
+      <section className="technical" id="technical-details"><button className="technical-toggle" onClick={() => setTechnical(!technical)} aria-expanded={technical}><span>Technical details</span><Icon name={technical ? 'chevron-up' : 'chevron-down'} /></button>{technical && <><div className="tabs technical-tabs" role="tablist">{(['findings', 'exhibits', ...((geo || points.length) ? ['location'] : []), 'file', 'checks'] as Tab[]).map((t) => <button key={t} role="tab" aria-selected={tab === t} className={tab === t ? 'active' : ''} onClick={() => setTab(t)}>{t === 'checks' ? 'Checks' : t[0].toUpperCase() + t.slice(1)}</button>)}</div><div className="technical-panel" role="tabpanel">
+        {tab === 'findings' && <><FindingsBoard findings={state.findings} modules={state.modules} focus={focus} />{section === 'notes' && <NotesSection facts={facts} openFinding={openFinding} />}</>}
+        {tab === 'exhibits' && <Exhibits state={state} geoBoard={!!geo} />}
+        {tab === 'location' && (geo ? <GeoBoard state={state} facts={facts} points={points} /> : <MapSection points={points} gps={facts.gps} />)}
+        {tab === 'file' && <EvidenceFile state={state} facts={facts} caseId={caseId} />}
+        {tab === 'checks' && <MethodSection state={state} facts={facts} />}
+      </div></>}</section>
+    </>}</main>
+    {revealing && dossier && <Reveal state={state} dossier={dossier} caseId={caseId} onClose={(jump) => { setRevealing(false); if (jump) openFinding(jump) }} />}
+  </MediaKindContext.Provider></RegionContext.Provider></PlaybackContext.Provider>
 }
-
-function Seal({ facts }: { facts: Facts }) {
-  const v = VERDICT[facts.verdict]
-  return (
-    <div className={`seal v-${facts.verdict}`} data-tip={v.line}>
-      <span className="seal-icon">{facts.verdict === 'running' ? <i className="pulse-dot big" /> : <Icon name={v.icon} />}</span>
-      <span className="seal-text">
-        <b>{facts.verdict === 'running' ? 'Analysing' : v.word}</b>
-        {facts.verdict === 'running' && (
-          <small>
-            {facts.checksDone} of {facts.checksTotal} checks
-          </small>
-        )}
-      </span>
-    </div>
-  )
-}
-
-function CaseHead({ state, facts, caseId, onRerun }: { state: CaseState; facts: Facts; caseId: string; onRerun: () => void }) {
-  const info = state.info
-  const still = facts.kind === 'image'
-  return (
-    <section className={`case-head v-${facts.verdict}`}>
-      {info?.thumb_url && <div className="cover" style={{ backgroundImage: `url(${info.thumb_url})` }} />}
-      <div className="cover-tint" />
-      <div className="wrap head-top">
-        {info?.thumb_url ? <img className="avatar" src={info.thumb_url} alt="" /> : <div className="avatar" />}
-        <div className="who-block">
-          <a href="#/" className="case-label mono" data-tip="Back to all cases">
-            <Icon name="arrow-left" /> CASE {caseId}
-          </a>
-          <h1 className={`name v-${facts.verdict}`} title={info?.filename}>
-            {info?.filename ?? 'Opening…'}
-          </h1>
-          {info && (
-            <div className="badges">
-              <Badge icon={still ? 'image' : 'video'} accent="purple" tip={still ? 'A still photograph' : 'A video recording'}>
-                {still ? `Photo · ${info.image?.format ?? ''}` : 'Video'}
-              </Badge>
-              <Badge icon={still ? 'camera' : 'mobile-screen'} accent={facts.device ? 'blue' : 'grey'}>
-                {facts.device ?? 'Unknown device'}
-              </Badge>
-              {still ? (
-                <Badge icon="expand" accent="teal" tip="Picture size">
-                  {info.image ? `${info.image.width}×${info.image.height} · ${info.image.megapixels} MP` : ''}
-                </Badge>
-              ) : (
-                <Badge icon="clock" accent="teal">
-                  {mmss(info.duration_s)}
-                </Badge>
-              )}
-              <Badge icon="location-dot" accent={facts.gps ? 'red' : 'grey'} tip={facts.gps ? 'The file stores its own GPS position' : 'No GPS position in the file'}>
-                {facts.gps ? 'GPS in file' : 'No GPS'}
-              </Badge>
-              {still && facts.faces && facts.faces.total > 0 && (
-                <Badge icon="user" accent={facts.faces.recognisable ? 'pink' : 'grey'} tip="Faces found, and how many are large and sharp enough to recognise">
-                  {facts.faces.total} face{facts.faces.total === 1 ? '' : 's'}
-                  {facts.faces.recognisable ? `, ${facts.faces.recognisable} recognisable` : ''}
-                </Badge>
-              )}
-              {still && facts.generator && (
-                <Badge icon="robot" accent="purple" tip="The file declares the generator that made it">
-                  {facts.generator}
-                </Badge>
-              )}
-            </div>
-          )}
-        </div>
-        <div className="head-actions">
-          <Seal facts={facts} />
-          <div className="head-icons">
-            <a className="icon-btn" href={api.reportUrl(caseId)} target="_blank" rel="noreferrer" data-tip="Printable report" aria-label="Report">
-              <Icon name="file-lines" />
-            </a>
-            {still && info?.original_url && (
-              <a className="icon-btn" href={info.original_url} target="_blank" rel="noreferrer" data-tip="Open the original file, untouched" aria-label="Original file">
-                <Icon name="download" />
-              </a>
-            )}
-            <button className="icon-btn" onClick={onRerun} disabled={facts.running} data-tip="Run every check again" aria-label="Rerun">
-              <Icon name="rotate-right" />
-            </button>
-          </div>
-        </div>
-      </div>
-    </section>
-  )
-}
-
-function VerdictLine({ state, facts, conn }: { state: CaseState; facts: Facts; conn: string }) {
-  const noun = mediaNoun(facts.kind)
+function VerdictLine({ state, facts, conn, incomplete }: { state: CaseState; facts: Facts; conn: string; incomplete: number }) {
   if (facts.running) {
     const m = facts.currentModule
-    const phrase = m ? modulePlain(m, state.modules[m]?.title).does.split(/[.:]/)[0] : 'Opening the file'
-    return (
-      <section className="verdict-block">
-        <p className="verdict-line">Examining this {noun}…</p>
-        <div className="run-line">
-          <span className="muted">
-            {phrase}… {facts.checksDone} of {facts.checksTotal} checks done
-          </span>
-          <div className="progress">
-            <span style={{ width: `${facts.checksTotal ? (facts.checksDone / facts.checksTotal) * 100 : 0}%` }} />
-          </div>
-        </div>
-      </section>
-    )
+    const phrase = m ? modulePlain(m, state.modules[m]?.title).does.split(/[.:]/)[0] : `Opening the ${mediaNoun(facts.kind)}`
+    return <section className="verdict-block"><p className="verdict-line">Analysing · {phrase}… {facts.checksDone} of {facts.checksTotal} checks</p></section>
   }
-  const flagged = facts.counts.critical + facts.counts.warning
-  const flaggedModules = new Set(state.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning').map((f) => f.module))
-  const passed = state.moduleOrder.filter((n) => state.modules[n]?.status === 'done' && !flaggedModules.has(n)).length
-  const unfinished = state.moduleOrder.filter((n) => !isTerminal(state.modules[n]?.status ?? 'queued')).length
-  return (
-    <section className="verdict-block">
-      <p className={`verdict-line v-${facts.verdict}`}>{facts.summary ?? VERDICT[facts.verdict].line}</p>
-      <p className="muted">
-        {flagged} {flagged === 1 ? 'thing' : 'things'} worth checking · {passed} {passed === 1 ? 'check' : 'checks'} passed
-        {unfinished && conn !== 'live' ? ` · ${unfinished} unfinished` : ''}
-      </p>
-    </section>
-  )
+  const unfinished = state.moduleOrder.filter((n) => ['queued', 'waiting', 'running'].includes(state.modules[n]?.status)).length
+  return <section className="verdict-block"><p className="verdict-line">{!(facts.summary ?? VERDICT[facts.verdict].line).toLowerCase().startsWith(VERDICT[facts.verdict].word.toLowerCase()) && <b className={`v-${facts.verdict}`}>{VERDICT[facts.verdict].word}</b>} <span>{facts.summary ?? VERDICT[facts.verdict].line}</span></p>{(incomplete > 0 || (unfinished > 0 && conn !== 'live')) && <p className="muted small">Coverage incomplete: {incomplete > 0 && `${incomplete} failed or skipped`}{incomplete > 0 && unfinished > 0 && conn !== 'live' && ' · '}{unfinished > 0 && conn !== 'live' && `${unfinished} unfinished`}</p>}</section>
 }

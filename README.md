@@ -29,10 +29,11 @@ npm run dev -- --port 5174
 # Open http://localhost:5174/?mock=planted&extras
 ```
 
-`&extras` opens a fully populated case immediately, with all detail sections
-expanded. The preview bar switches between video, edited photo, AI-generated
-photo and clean-verdict examples; it also opens the case gallery, collapses
-details, replays progress and resets the session. Media, maps, reports and
+`&extras` opens a fully populated case immediately, with up to three key findings
+and evidence available inline. Technical details start closed. The preview bar
+switches between video, edited photo, AI-generated photo and clean-verdict
+examples; it also opens the case gallery, toggles technical details, replays
+progress and resets the session. Media, maps, reports and
 enhancement previews are served locally. Uploads stay in browser memory and
 use synthetic findings; enhancement crops the selected region with browser
 colour filters. No forensic analysis or AI requests run in this mode. Refresh

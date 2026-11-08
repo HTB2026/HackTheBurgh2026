@@ -42,7 +42,7 @@ export function Header({ route }: { route: string }) {
               <i className="status-dot" /> Server offline
             </span>
           ) : (
-            health && (
+            health && route !== 'case' && (
               <span
                 className={`status-pill ${health.openai ? 'c-purple' : 'c-grey'}`}
                 data-tip={
@@ -55,7 +55,7 @@ export function Header({ route }: { route: string }) {
               </span>
             )
           )}
-          {health && (
+          {health && route !== 'case' && (
             <span className="status-pill c-green" data-tip={`${health.modules.length} checks run on every video, ${health.image_modules?.length ?? 0} on every photo`}>
               <i className="status-dot on" /> {health.modules.length + (health.image_modules?.length ?? 0)} checks ready
             </span>
