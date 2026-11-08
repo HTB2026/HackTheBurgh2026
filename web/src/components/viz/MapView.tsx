@@ -102,16 +102,33 @@ export function MapView({ points, height = 360 }: { points: MapPoint[]; height?:
     // Scroll to zoom, like the globe: every wheel event zooms at once around the point under the
     // pointer, in proportion to the scroll (a mouse notch is about half a level; a trackpad
     // zooms smoothly), and the page does not scroll while the pointer is over the map.
+    // It moves the view the way Leaflet's pinch zoom does (a 'pinch' move keeps the tiles on
+    // screen, scaled, until the gesture ends); a plain setZoom resets the view and blanks the map.
     const container = el.current
+    const lm = m as unknown as { _move(c: L.LatLng, z: number, d?: object): void; _moveEnd(changed: boolean): void; _stop(): void }
+    let settle = 0
     const onWheel = (e: WheelEvent) => {
       e.preventDefault()
       const px = e.deltaY * (e.deltaMode === 1 ? 16 : e.deltaMode === 2 ? container.clientHeight : 1)
       const step = -Math.max(-240, Math.min(240, px)) / 200
-      const z = Math.max(m.getMinZoom(), Math.min(m.getMaxZoom(), m.getZoom() + step))
-      if (z !== m.getZoom()) m.setZoomAround(m.mouseEventToContainerPoint(e as unknown as MouseEvent), z, { animate: false })
+      const from = m.getZoom()
+      const z = Math.max(m.getMinZoom(), Math.min(m.getMaxZoom(), from + step))
+      if (z === from) return
+      // New centre that keeps the point under the pointer where it is.
+      const p = m.mouseEventToContainerPoint(e as unknown as MouseEvent)
+      const half = m.getSize().divideBy(2)
+      const centre = m.containerPointToLatLng(half.add(p.subtract(half).multiplyBy(1 - 1 / m.getZoomScale(z, from))))
+      if (!settle) lm._stop()
+      lm._move(centre, z, { pinch: true })
+      window.clearTimeout(settle)
+      settle = window.setTimeout(() => {
+        settle = 0
+        lm._moveEnd(true)
+      }, 150)
     }
     container.addEventListener('wheel', onWheel, { passive: false })
     return () => {
+      window.clearTimeout(settle)
       container.removeEventListener('wheel', onWheel)
       ro.disconnect()
       m.remove()
