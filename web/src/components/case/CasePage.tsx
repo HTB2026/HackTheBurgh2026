@@ -192,7 +192,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
                         />
                       )}
                     </div>
-                    {still ? <RegionList findings={withBrowser.findings} onOpenFinding={openFinding} /> : <KeyMoments findings={withBrowser.findings} duration={info.duration_s} />}
+                    {still ? <RegionList findings={withBrowser.findings} artifacts={withBrowser.artifacts} onOpenFinding={openFinding} /> : <KeyMoments findings={withBrowser.findings} duration={info.duration_s} />}
                   </div>
                 </section>
 

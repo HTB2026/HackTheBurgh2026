@@ -5,6 +5,10 @@ of a percent: invisible to the eye, but measurable from the average colour of
 a face over time. This module finds faces, tracks them, extracts the pulse
 with the POS method (Wang et al., 2017) and renders an Eulerian colour
 magnification so the pulse becomes visible.
+
+The same face tracks also answer "who appears, and when": every face followed
+for at least a second is listed with its time on screen. Faces are only
+followed from frame to frame, never identified or compared with other cases.
 """
 
 import asyncio
@@ -127,10 +131,131 @@ def _track_faces(
             ):
                 best["frames"].append(index)
                 best["boxes"].append(box)
+                track = best
             else:
-                tracks.append({"frames": [index], "boxes": [box]})
+                track = {"frames": [index], "boxes": [box]}
+                tracks.append(track)
+
+            area = box[2] * box[3]
+
+            if area > track.get("crop_area", 0):
+                x, y, w, h = box
+                pad = 0.25 * w
+                crop = frame[
+                    int(max(0, y - pad)) : int(y + h + pad),
+                    int(max(0, x - pad)) : int(x + w + pad),
+                ]
+
+                if crop.size:
+                    track["crop_area"] = area
+                    track["crop"] = crop.copy()
+                    track["crop_frame"] = index
 
     return tracks, first_frame
+
+
+def _appearances(tracks: list[dict[str, Any]], fps: float) -> list[dict[str, Any]]:
+    """Face tracks -> face appearances on screen with their time intervals.
+
+    A track broken by a turned head or a missed detection is rejoined when the next
+    track starts within 2 s, near where it ended, at a similar size. Tracks seen for
+    under a second (3 detections) are dropped as detector noise.
+    """
+    # The tracker rejoins a box seen in the same place any time later (after a cut it may be
+    # someone else), so split tracks at gaps over 2 s first; only short gaps are bridged below.
+    pieces = []
+
+    for t in tracks:
+        start = 0
+
+        for i in range(1, len(t["frames"]) + 1):
+            if i == len(t["frames"]) or t["frames"][i] - t["frames"][i - 1] > 2 * fps:
+                piece = {"frames": t["frames"][start:i], "boxes": t["boxes"][start:i]}
+
+                if t.get("crop_frame") in piece["frames"]:
+                    piece["crop"], piece["crop_area"] = (
+                        t.get("crop"),
+                        t.get("crop_area", 0),
+                    )
+
+                pieces.append(piece)
+                start = i
+
+    ordered = sorted((t for t in pieces if t["frames"]), key=lambda t: t["frames"][0])
+    merged: list[dict[str, Any]] = []
+
+    for t in ordered:
+        x, y, w, h = t["boxes"][0]
+        join = None
+
+        for m in merged:
+            mx, my, mw, mh = m["boxes"][-1]
+            gap = t["frames"][0] - m["frames"][-1]
+
+            if (
+                0 < gap <= 2 * fps
+                and np.hypot(x + w / 2 - mx - mw / 2, y + h / 2 - my - mh / 2)
+                <= 1.5 * max(w, mw)
+                and 0.6 <= w / max(mw, 1e-6) <= 1.6
+            ):
+                join = m
+                break
+
+        if join is None:
+            merged.append(
+                {
+                    "frames": list(t["frames"]),
+                    "boxes": list(t["boxes"]),
+                    "crop": t.get("crop"),
+                    "crop_area": t.get("crop_area", 0),
+                }
+            )
+        else:
+            join["frames"] += t["frames"]
+            join["boxes"] += t["boxes"]
+
+            if t.get("crop_area", 0) > join["crop_area"]:
+                join["crop"], join["crop_area"] = t.get("crop"), t["crop_area"]
+
+    step = max(1, int(round(fps / 3)))
+    people = []
+
+    for m in merged:
+        if len(m["frames"]) < 3:
+            continue
+
+        intervals: list[list[float]] = []
+
+        for f in m["frames"]:
+            t = f / fps
+
+            if intervals and t - intervals[-1][1] <= 1.0 + step / fps:
+                intervals[-1][1] = t
+            else:
+                intervals.append([t, t])
+
+        for iv in intervals:
+            iv[1] += step / fps  # a detection covers the frames until the next one
+
+        people.append({
+            "first_s": intervals[0][0],
+            "last_s": intervals[-1][1],
+            "seconds": sum(b - a for a, b in intervals),
+            "intervals": intervals,
+            "width_px": float(np.median([b[2] for b in m["boxes"]])),
+            "crop": m["crop"],
+        })  # fmt: skip
+
+    people.sort(key=lambda p: p["first_s"])
+
+    for i, p in enumerate(people):
+        p["index"] = i + 1
+
+    return people
+
+
+def _clock(t: float) -> str:
+    return f"{int(t // 60)}:{t % 60:04.1f}"
 
 
 def _pos(rgb: np.ndarray, fps: float) -> np.ndarray:
@@ -274,9 +399,6 @@ class Pulse:
         if info is None:
             raise Skip("no video stream")
 
-        if info.duration_s < _MIN_SECONDS:
-            raise Skip(f"clip shorter than {_MIN_SECONDS:.0f} s")
-
         model = await _model()
 
         if model is None:
@@ -290,6 +412,16 @@ class Pulse:
         tracks, first = await asyncio.to_thread(
             _track_faces, model, ctx.path, width, height, fps, limit
         )
+        self._report_people(out, _appearances(tracks, fps), info, limit / fps)
+
+        if info.duration_s < _MIN_SECONDS:
+            out.log(
+                f"clip shorter than {_MIN_SECONDS:.0f} s: too short to read a pulse"
+            )
+            ctx.publish(self.name, {"faces": 0})
+
+            return
+
         tracks = [
             t
             for t in tracks
@@ -453,3 +585,67 @@ class Pulse:
 
         ctx.publish(self.name, published)
         out.progress(1.0)
+
+    def _report_people(
+        self, out: Reporter, people: list[dict[str, Any]], info: Any, seconds: float
+    ) -> None:
+        if not people:
+            return
+
+        for p in people[:12]:
+            crop = p.pop("crop", None)
+
+            if crop is not None and crop.size:
+                scale = max(1.0, 160 / max(crop.shape[:2]))
+                big = cv2.resize(
+                    crop, None, fx=scale, fy=scale, interpolation=cv2.INTER_CUBIC
+                )
+                path = out.path(f"person{p['index']}.jpg")
+                cv2.imwrite(
+                    path,
+                    cv2.cvtColor(big, cv2.COLOR_RGB2BGR),
+                    [cv2.IMWRITE_JPEG_QUALITY, 90],
+                )
+                out.artifact(f"person{p['index']}", "image", f"Appearance #{p['index']}: on screen from {_clock(p['first_s'])}",
+                             file=path, data={"caption": f"Seen for {p['seconds']:.0f} s in total; largest view in the clip. Not identified.", "time_s": p["first_s"]})  # fmt: skip
+
+        for p in people:
+            p.pop("crop", None)
+
+        n = len(people)
+        # Faces on screen together are certainly different people: the most at once is a floor.
+        events = sorted([(a, 1) for p in people for a, _ in p["intervals"]] + [(b, -1) for p in people for _, b in p["intervals"]], key=lambda e: (e[0], e[1]))  # fmt: skip
+        together, most, when = 0, 0, people[0]["first_s"]
+
+        for t, d in events:
+            together += d
+
+            if together > most:
+                most, when = together, t
+
+        rows = [[f"#{p['index']}", ", ".join(f"{_clock(a)}–{_clock(b)}" for a, b in p["intervals"][:6]) + (" …" if len(p["intervals"]) > 6 else ""),
+                 f"{p['seconds']:.0f} s", f"{p['width_px'] * info.width / min(_DETECT_WIDTH, info.width):.0f} px"] for p in people[:30]]  # fmt: skip
+        out.artifact(
+            "people",
+            "table",
+            f"Face appearances and when ({n})",
+            data={
+                "columns": ["appearance", "on screen", "total", "face width"],
+                "rows": rows,
+            },
+        )
+        longest = max(people, key=lambda p: p["seconds"])
+        out.finding(
+            "info",
+            (f"At least {most} different people on screen ({n} face appearances)" if most > 1
+             else f"{n} face appearances on screen" if n > 1
+             else f"1 face on screen, from {_clock(people[0]['first_s'])}"),
+            (f"Faces were followed from frame to frame, three times a second, over the first {seconds:.0f} s. "
+             + (f"Up to {most} faces are on screen together (at {_clock(when)}), so at least {most} different people appear. " if most > 1 else "")
+             + (f"Appearance #{longest['index']} is the longest ({longest['seconds']:.0f} s). " if n > 1 else "")
+             + "Nobody is identified, so the same person seen again after a cut, or after leaving the frame or turning away for more than two seconds, "
+             "counts as a new appearance; faces in profile, very small or blurred may be missed."),
+            time_s=float(people[0]["first_s"]),
+            tags=["person", "appearance"],
+            data={"count": n, "at_least": most, "people": people[:30]},
+        )  # fmt: skip

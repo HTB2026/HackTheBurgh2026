@@ -24,6 +24,21 @@ from earwitness.modules.pulse import _model
 _DETECT_SIDE = 1600
 _RECOGNISABLE_PX = 80  # face width in original pixels
 _SHARP = 60.0  # Laplacian variance on a 128 px face crop
+_CHECK_PX = (
+    120  # faces narrower than this hold too few blocks for the grain/ghost comparison
+)
+_SMOOTH_RATIO = (
+    0.7  # face grain below 70% of its surroundings (and of other faces) is a lead
+)
+_GHOST_AGREE = 0.6  # under 60% of a face's blocks at the picture's quality is a lead
+_GHOST_BLOCKS = 15  # textured 8x8 blocks needed before the ghost says anything
+
+_HIGH_PASS = np.array([[-1, -1, -1], [-1, 8, -1], [-1, -1, -1]], np.float32) / 8
+_QUALITIES = np.array(list(range(30, 70, 5)) + list(range(70, 101)))
+_TABLES = np.stack([photo.scaled_standard_table(photo.STD_LUMA.reshape(8, 8).astype(float), int(q)) for q in _QUALITIES])  # fmt: skip
+_DCT = np.array(
+    [[(np.sqrt(0.5) if u == 0 else 1.0) * 0.5 * np.cos((2 * x + 1) * u * np.pi / 16) for x in range(8)] for u in range(8)]
+)  # fmt: skip
 
 _REGION_NAME = re.compile(
     r"mwg-rs:Name=\"([^\"]{1,80})\"|<mwg-rs:Name>([^<]{1,80})</mwg-rs:Name>|MPReg:PersonDisplayName=\"([^\"]{1,80})\""
@@ -49,6 +64,146 @@ def _sharpness(crop: np.ndarray) -> float:
     )
 
     return float(cv2.Laplacian(gray, cv2.CV_64F).var())
+
+
+def _ghost(luma: np.ndarray, x0: int, y0: int, x1: int, y1: int) -> np.ndarray:
+    """Best-fit last-save quality of each textured 8x8 block in a region (grid from 0,0).
+
+    For each candidate quality, the block's DCT is requantised; the error, relative to
+    what random coefficients would give, is near zero at the quality it was saved at.
+    """
+    bx0, by0, bx1, by1 = -(-x0 // 8), -(-y0 // 8), x1 // 8, y1 // 8
+    found = []
+
+    for by in range(by0, by1, 16):
+        rows = min(16, by1 - by)
+
+        if bx1 <= bx0 or rows <= 0:
+            break
+
+        block = luma[by * 8 : (by + rows) * 8, bx0 * 8 : bx1 * 8]
+        block = block.reshape(rows, 8, bx1 - bx0, 8).transpose(0, 2, 1, 3) - 128.0
+        coef = np.einsum("ux,abxy,vy->abuv", _DCT, block, _DCT)
+        ac = (coef**2).sum((2, 3)) - coef[..., 0, 0] ** 2
+        clipped = (block.min((2, 3)) <= -127.5) | (block.max((2, 3)) >= 126.5)
+        c = coef[:, :, None]
+        err = ((c - np.round(c / _TABLES) * _TABLES) ** 2).sum((3, 4))
+        ratio = err / (np.minimum(c**2, _TABLES**2 / 12).sum((3, 4)) + 1e-3)
+        q = np.where(
+            (ac > 50) & ~clipped & (ratio.min(2) < 0.35), _QUALITIES[ratio.argmin(2)], 0
+        )
+        found.append(q[q > 0])
+
+    return np.concatenate(found) if found else np.zeros(0, int)
+
+
+def _grain(
+    high: np.ndarray, x0: int, y0: int, x1: int, y1: int, keep: np.ndarray | None = None
+) -> float | None:
+    """Sensor grain: robust spread of the high-pass in the flattest quarter of 16 px blocks."""
+    values = []
+
+    for y in range(max(0, y0), y1 - 16, 16):
+        for x in range(max(0, x0), x1 - 16, 16):
+            if keep is not None and not keep[y - y0 + 8, x - x0 + 8]:
+                continue
+
+            b = high[y : y + 16, x : x + 16]
+            values.append(1.4826 * float(np.median(np.abs(b - np.median(b)))))
+
+    return float(np.percentile(values, 25)) if len(values) >= 6 else None
+
+
+def _picture_quality(luma: np.ndarray) -> tuple[int | None, float]:
+    """Dominant last-save quality over 60 random 128 px patches, and the share of blocks agreeing."""
+    h, w = luma.shape
+    rng = np.random.default_rng(0)
+    found = []
+
+    for _ in range(60 if h > 160 and w > 160 else 0):
+        x = int(rng.integers(0, w - 128)) // 8 * 8
+        y = int(rng.integers(0, h - 128)) // 8 * 8
+        found.append(_ghost(luma, x, y, x + 128, y + 128))
+
+    qs = np.concatenate(found) if found else np.zeros(0, int)
+
+    if len(qs) < 100:
+        return None, 0.0
+
+    counts = np.bincount(qs)
+    best = int(counts.argmax())
+
+    return best, float(counts[max(0, best - 1) : best + 2].sum() / len(qs))
+
+
+def _face_checks(image: np.ndarray, people: list[dict[str, Any]], jpeg: bool) -> None:
+    """Grain and save-quality of each face against its surroundings; adds `checks`/`flags` to each person."""
+    full_h, full_w = image.shape[:2]
+    gray = cv2.cvtColor(image, cv2.COLOR_RGB2GRAY).astype(np.float32)
+    high = cv2.filter2D(gray, -1, _HIGH_PASS)
+    luma = image[..., 0] * 0.299 + image[..., 1] * 0.587 + image[..., 2] * 0.114
+    picture_q, picture_agree = _picture_quality(luma) if jpeg else (None, 0.0)
+
+    for p in people:
+        b = p["box"]
+        x, y, w, h = b["x"] * full_w, b["y"] * full_h, b["w"] * full_w, b["h"] * full_h
+        p["checks"] = {}
+        p["flags"] = []
+
+        if w < _CHECK_PX:
+            continue
+
+        # Inner face: cheeks, nose, chin; clear of hair and background.
+        ix0, iy0, ix1, iy1 = (
+            int(x + 0.2 * w),
+            int(y + 0.25 * h),
+            int(x + 0.8 * w),
+            int(y + 0.9 * h),
+        )
+        rx0, ry0 = int(max(0, x - 0.8 * w)), int(max(0, y - 0.6 * h))
+        rx1, ry1 = int(min(full_w, x + 1.8 * w)), int(min(full_h, y + 1.6 * h))
+        ring = np.ones((ry1 - ry0, rx1 - rx0), bool)
+        ring[
+            max(0, int(y) - ry0) : int(y + h) - ry0,
+            max(0, int(x) - rx0) : int(x + w) - rx0,
+        ] = False
+        face_grain = _grain(high, ix0, iy0, ix1, iy1)
+        ring_grain = _grain(high, rx0, ry0, rx1, ry1, ring)
+        p["checks"]["grain"] = face_grain
+        p["checks"]["grain_around"] = ring_grain
+
+        if picture_q is not None:
+            qs = _ghost(luma, ix0, iy0, ix1, iy1)
+
+            if len(qs) >= _GHOST_BLOCKS:
+                agree = float(((qs >= picture_q - 1) & (qs <= picture_q + 1)).mean())
+                others = qs[(qs < picture_q - 1) | (qs > picture_q + 1)]
+                p["checks"]["save_quality"] = picture_q
+                p["checks"]["blocks_agreeing"] = agree
+                p["checks"]["blocks"] = int(len(qs))
+
+                if agree < _GHOST_AGREE and picture_agree >= 0.8:
+                    p["flags"].append("ghost")
+                    p["checks"]["other_quality"] = (
+                        int(np.bincount(others).argmax()) if len(others) else None
+                    )
+
+    for p in people:
+        g, around = p["checks"].get("grain"), p["checks"].get("grain_around")
+
+        if g is None or not around or around < 0.4:
+            continue
+
+        others = [
+            o["checks"]["grain"]
+            for o in people
+            if o is not p and o["checks"].get("grain")
+        ]
+
+        if g < _SMOOTH_RATIO * around and (
+            not others or g < _SMOOTH_RATIO * float(np.median(others))
+        ):
+            p["flags"].append("smooth")
 
 
 class Faces:
@@ -173,6 +328,11 @@ class Faces:
                     person["eyes_artifact"] = f"faces:eyes{index + 1}"
 
         if people:
+            out.progress(0.5, "comparing each face with its surroundings")
+            await asyncio.to_thread(_face_checks, image, people, info.format == "JPEG")
+            self._report_checks(out, people)
+
+        if people:
             path = out.path("faces.jpg")
             photo.save_bgr(path, canvas, 88)
             out.artifact("faces", "image", f"{len(people)} face{'s' if len(people) != 1 else ''} found (red: recognisable, yellow: not)", file=path,
@@ -246,6 +406,7 @@ class Faces:
             self.name,
             {
                 "faces": len(people),
+                "flagged": [p["index"] for p in people if p["flags"]],
                 "recognisable": len(recognisable),
                 "names": names,
                 "people": [
@@ -254,3 +415,57 @@ class Faces:
             },
         )
         out.progress(1.0)
+
+    def _report_checks(self, out: Reporter, people: list[dict[str, Any]]) -> None:
+        checked = [
+            p
+            for p in people
+            if p["checks"].get("grain") is not None or "blocks" in p["checks"]
+        ]
+
+        for p in people:
+            if not p["flags"]:
+                continue
+
+            c, n = p["checks"], p["index"]
+            both = "smooth" in p["flags"] and "ghost" in p["flags"]
+            reasons = []
+
+            if "smooth" in p["flags"]:
+                reasons.append(
+                    f"its skin carries less grain ({c['grain']:.2f}) than the picture around it ({c['grain_around']:.2f}), "
+                    "as if it came from a softer, smaller or more compressed photo"
+                )
+
+            if "ghost" in p["flags"]:
+                other = c.get("other_quality")
+                reasons.append(
+                    f"only {c['blocks_agreeing'] * 100:.0f}% of its {c['blocks']} textured JPEG blocks fit the quality the rest of the picture was saved at (Q{c['save_quality']})"
+                    + (f"; many fit Q{other} instead" if other else "")
+                )
+
+            out.finding(
+                "warning" if both else "notice",
+                f"Face {n} looks pasted in: grain and save quality both differ from the rest" if both
+                else f"Face {n} has {'smoother grain' if 'smooth' in p['flags'] else 'a different JPEG save quality'} than its surroundings",
+                f"Face {n} was compared with the picture around it: " + "; and ".join(reasons) + ". "
+                + ("Two independent traces agree on the same face, which is what a face pasted from another photo leaves. "
+                   if both else
+                   "On its own this is a lead, not proof: phone beauty filters, makeup, focus and heavy skin smoothing also lower grain, "
+                   "and flat or bright skin holds few usable blocks. ")
+                + "Look at the face's edges (jaw, hairline) in the viewer for a seam.",
+                tags=(["splice", "noise", "ghost", "face-check"] if both else
+                      ["noise" if "smooth" in p["flags"] else "ghost", "face-check"]),
+                data={"box": p["box"], "face": n, **{k: v for k, v in c.items() if v is not None}},
+            )  # fmt: skip
+
+        if checked and not any(p["flags"] for p in people):
+            out.finding(
+                "info",
+                f"No pasted faces: {len(checked)} face{'s' if len(checked) != 1 else ''} match{'' if len(checked) != 1 else 'es'} the picture's grain and save quality",
+                "Each face large enough to test was compared with the picture around it: the grain of its skin and the JPEG quality its blocks were last saved at. "
+                "A face pasted from another photo usually differs in one or both. Faces narrower than "
+                f"{_CHECK_PX} px are not tested, and a skilled swap that re-adds grain and resaves the whole picture can pass.",
+                tags=["face-check"],
+                data={"faces": [p["index"] for p in checked]},
+            )  # fmt: skip
