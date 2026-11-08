@@ -1917,3 +1917,61 @@ td.lb-title > * {
   color: var(--muted);
   pointer-events: none;
 }
+
+/* Geolocation globe (WebGPU) */
+.map-box {
+  position: relative;
+}
+.map-mode {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  z-index: 3;
+  border: 1px solid var(--line);
+  background: var(--panel);
+}
+.map-mode button {
+  padding: 4px 12px;
+  font-size: 12px;
+}
+.globe {
+  position: relative;
+  width: 100%;
+  background: #08090d;
+  overflow: hidden;
+}
+.globe-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: grab;
+  touch-action: none;
+}
+.globe-canvas:active {
+  cursor: grabbing;
+}
+.globe-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 8px;
+  right: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 14px;
+  font-size: 11.5px;
+  color: var(--muted);
+  pointer-events: none;
+}
+.globe-legend i {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin-right: 5px;
+}
+.map-legend tr.fly {
+  cursor: pointer;
+}
+.map-legend tr.fly:hover td {
+  background: color-mix(in srgb, var(--link) 10%, transparent);
+}

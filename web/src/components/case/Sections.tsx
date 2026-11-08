@@ -10,6 +10,8 @@ import { CopyButton, Icon, SevChip, SourceChip, Term } from '../ui/ui'
 import { DataView, JsonTree } from '../ui/Data'
 import { Timeline } from '../viz/Timeline'
 import { MapView, radiusText, type MapPoint } from '../viz/MapView'
+import { Globe } from '../viz/Globe'
+import { useGpu } from '../../lib/gpu'
 import { ArtifactGroup } from './Artifacts'
 
 const arts = (state: CaseState) => state.artifactOrder.map((id) => state.artifacts[id])
@@ -353,6 +355,11 @@ export function mapPoints(state: CaseState, facts: Facts): MapPoint[] {
 }
 
 export function MapSection({ points, gps }: { points: MapPoint[]; gps: Facts['gps'] }) {
+  const gpuState = useGpu()
+  const gpu = gpuState === 'loading' ? null : gpuState
+  const [view, setView] = useState<'map' | 'globe'>('map')
+  const [focus, setFocus] = useState({ index: -1, nonce: 0 })
+  const globe = gpu && view === 'globe'
   return (
     <>
       {gps && (
@@ -366,11 +373,20 @@ export function MapSection({ points, gps }: { points: MapPoint[]; gps: Facts['gp
         yellow line joins GPS and answer.
       </p>
       <div className="map-box">
-        <MapView points={points} height={420} />
+        {gpu && (
+          <div className="tabs map-mode" role="radiogroup" aria-label="Map view">
+            {(['map', 'globe'] as const).map((m) => (
+              <button key={m} type="button" role="radio" aria-checked={view === m} className={view === m ? 'active' : ''} onClick={() => setView(m)} data-tip={m === 'globe' ? '3D globe: flies to the answer, shows every place considered (WebGPU)' : 'Street and satellite map'}>
+                {m === 'map' ? 'Map' : 'Globe'}
+              </button>
+            ))}
+          </div>
+        )}
+        {globe ? <Globe gpu={gpu} points={points} height={420} focus={focus} /> : <MapView points={points} height={420} />}
         <table className="dtable map-legend">
           <tbody>
             {points.map((p, i) => (
-              <tr key={i}>
+              <tr key={i} className={globe ? 'fly' : undefined} onClick={globe ? () => setFocus((f) => ({ index: i, nonce: f.nonce + 1 })) : undefined} data-tip={globe ? 'Fly there' : undefined}>
                 <td className="place">
                   <span className={`dot-k ${p.kind === 'ai-candidate' ? 'lead' : p.kind === 'ai' || p.kind === 'inferred' ? 'ai' : ''}`} /> {p.label}
                 </td>
