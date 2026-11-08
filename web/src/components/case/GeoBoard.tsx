@@ -211,11 +211,21 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
   const gps = facts.gps
   const w = win >= 0 ? cands[win] : undefined
 
+  const [extra, setExtra] = useState<'how' | 'others' | 'clues' | 'key' | null>(null)
+  const extras = [
+    { key: 'how' as const, icon: 'circle-question', label: 'How it was worked out', count: null },
+    ...(others.length ? [{ key: 'others' as const, icon: 'list-ol', label: 'Other places considered', count: others.length }] : []),
+    ...(clues ? [{ key: 'clues' as const, icon: 'ear-listen', label: 'Clues from sound and text', count: null }] : []),
+    ...(points.length ? [{ key: 'key' as const, icon: 'map-location-dot', label: 'Exact coordinates', count: null }] : []),
+  ]
+
   // Nothing to say and nothing coming: one quiet line, the rest of the page takes over.
   if (!f && !gps && !searching && !points.length)
     return (
       <section className="loc-hero none" id="d-geo">
-        <p className="loc-kicker">Where it was {filmed}</p>
+        <p className="loc-kicker">
+          <Icon name="location-dot" /> Where it was {filmed}
+        </p>
         <p className="muted">
           {geoModule ? `Nothing in this ${noun} narrowed down where it was ${filmed}.` : `The location search did not run for this ${noun}: it needs an AI model on the server.`}
         </p>
@@ -230,13 +240,15 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
   return (
     <section className={`loc-hero ${tone}`} id="d-geo">
       <p className="loc-kicker">
-        <Icon name="location-crosshairs" /> Where this {noun} was {filmed}
+        <Icon name="location-dot" /> Where this {noun} was {filmed}
       </p>
       <div className="loc-head">
-        <span className={`gb-stamp ${verified ? 'ok' : tone === 'gps' ? 'gps' : 'lead'}`}>
-          {searching ? <i className="pulse-dot" /> : <Icon name={verified ? 'circle-check' : gps && !located ? 'satellite' : 'magnifying-glass-location'} />} {stamp}
-        </span>
-        <h2 className="loc-place">{title}</h2>
+        <div className="loc-title">
+          <span className={`gb-stamp small ${verified ? 'ok' : tone === 'gps' ? 'gps' : 'lead'}`}>
+            {searching ? <i className="pulse-dot" /> : <Icon name={verified ? 'circle-check' : gps && !located ? 'satellite' : 'magnifying-glass-location'} />} {stamp}
+          </span>
+          <h2 className="loc-place">{title}</h2>
+        </div>
         <div className="loc-meta muted">
           {located && (
             <span className="mono">
@@ -270,14 +282,18 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
 
       <div className={`loc-grid ${located ? '' : 'map-only'}`}>
         <div className="loc-map">
-          {points.length ? <MapOrGlobe points={points} height={500} /> : <div className="loc-map-empty">{searching ? <i className="pulse-dot big" /> : <Icon name="earth-europe" />}</div>}
+          {points.length ? <MapOrGlobe points={points} height={340} /> : <div className="loc-map-empty">{searching ? <i className="pulse-dot big" /> : <Icon name="earth-europe" />}</div>}
         </div>
         {located && (
           <div className="loc-proof">
-            <figure className="loc-evidence" onClick={() => frame?.time_s != null && pb.seek(frame.time_s)} role="button" tabIndex={0} data-tip={still ? undefined : 'Click to jump to this moment'}>
-              {frame?.url ? <img src={frame.url} alt="Evidence frame" /> : <div className="gb-img"><div>No frame</div></div>}
-              <figcaption>{still ? 'The photo' : `The video${frame?.time_s != null ? ` at ${mmss(frame.time_s)}` : ''}`}</figcaption>
-            </figure>
+            <div className="loc-shots">
+              <figure className="gb-img evidence" onClick={() => frame?.time_s != null && pb.seek(frame.time_s)} role="button" tabIndex={0} data-tip={still ? undefined : 'Click to jump to this moment'}>
+                {frame?.url ? <img src={frame.url} alt="Evidence frame" /> : <div>No frame</div>}
+                <figcaption>{still ? 'The photo' : `The video${frame?.time_s != null ? ` at ${mmss(frame.time_s)}` : ''}`}</figcaption>
+              </figure>
+              <Thumb a={state.artifacts[`geo:ref${win}_wiki`]} label={w?.landmark ? `Wikipedia: ${w.landmark}` : 'Landmark photo'} empty="No landmark photo" />
+              <Thumb a={state.artifacts[`geo:ref${win}_sat`]} label="Satellite view" empty={(w?.radius_km ?? 0) > 25 ? 'Area too large for satellite' : 'No satellite view'} />
+            </div>
             {frames.length > 1 && (
               <div className="gb-frames">
                 {frames.map((fr, i) => (
@@ -288,13 +304,6 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
                 ))}
               </div>
             )}
-            <p className="loc-vs">
-              <Icon name="arrows-left-right" /> checked against the real place
-            </p>
-            <div className="loc-refs">
-              <Thumb a={state.artifacts[`geo:ref${win}_wiki`]} label={w?.landmark ? `Wikipedia: ${w.landmark}` : 'Landmark photo'} empty="No landmark photo" />
-              <Thumb a={state.artifacts[`geo:ref${win}_sat`]} label="Satellite view" empty={(w?.radius_km ?? 0) > 25 ? 'Area too large for satellite' : 'No satellite view'} />
-            </div>
             <MatchBar match={leads[win]?.match ?? d.match} ok={verified} />
             <Ticks lead={leads[win]} />
             <Why c={w} />
@@ -304,41 +313,33 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
 
       {children}
 
-      <p className="loc-how muted">
-        How it works: the AI looks only at the pixels and sounds (never the file’s GPS), proposes places, then each place is checked against a Wikipedia
-        photo of its landmark and a satellite view. A place is <b>verified</b> only when the real-world pictures clearly match the {noun}.
-      </p>
-
-      <div className="loc-more">
-        {others.length > 0 && (
-          <details>
-            <summary>
-              <Icon name="list-ol" /> {others.length} other place{others.length === 1 ? '' : 's'} the AI considered
-            </summary>
+      <div className="loc-bar tabs" role="tablist" aria-label="More about the location">
+        {extras.map((x) => (
+          <button key={x.key} type="button" role="tab" aria-selected={extra === x.key} className={extra === x.key ? 'active' : ''} onClick={() => setExtra(extra === x.key ? null : x.key)}>
+            <Icon name={x.icon} /> {x.label}
+            {x.count != null && <span className="n">{x.count}</span>}
+          </button>
+        ))}
+      </div>
+      {extra && (
+        <div className="loc-extra" role="tabpanel">
+          {extra === 'how' && (
+            <p className="loc-how muted">
+              The AI looks only at the pixels and sounds (never the file’s GPS), proposes places, then each place is checked against a Wikipedia photo of its
+              landmark and a satellite view. A place is <b>verified</b> only when the real-world pictures clearly match the {noun}.
+            </p>
+          )}
+          {extra === 'others' && (
             <div className="gb-rows">
               {others.map((i, rank) => (
                 <CandidateRow key={i} state={state} c={cands[i]} i={i} rank={rank + 2} lead={leads[i]} frame={frame} still={still} />
               ))}
             </div>
-          </details>
-        )}
-        {clues && (
-          <details className="gb-clues">
-            <summary>
-              <Icon name="ear-listen" /> Non-visual clues the AI was given (sound, text, light)
-            </summary>
-            <pre>{clues}</pre>
-          </details>
-        )}
-        {points.length > 0 && (
-          <details>
-            <summary>
-              <Icon name="map-location-dot" /> Map key and exact coordinates
-            </summary>
-            <MapSection points={points} gps={gps} legendOnly />
-          </details>
-        )}
-      </div>
+          )}
+          {extra === 'clues' && <pre className="loc-clues">{clues}</pre>}
+          {extra === 'key' && <MapSection points={points} gps={gps} legendOnly />}
+        </div>
+      )}
     </section>
   )
 }

@@ -6,12 +6,14 @@ case runner turns those calls into JSON events that the web UI streams.
 """
 
 import asyncio
+import contextlib
 import itertools
 import json
 import numbers
 import os
 import subprocess
 import time
+from collections.abc import AsyncIterator
 from collections.abc import Awaitable
 from collections.abc import Callable
 from dataclasses import asdict
@@ -249,6 +251,9 @@ class CaseContext:
         self._locks: dict[str, asyncio.Lock] = {}
         self._published: dict[str, Any] = {}
         self._events: dict[str, asyncio.Event] = {}
+        # The run's worker-slot semaphore (set by run_case), so a module that
+        # waits on others mid-run can lend its slot out; see ``waiting``.
+        self._gate: asyncio.Semaphore | None = None
 
     # ---- still images -----------------------------------------------------
     def image(self) -> np.ndarray | None:
@@ -308,6 +313,27 @@ class CaseContext:
     def publish(self, key: str, value: Any) -> None:
         self._published[key] = value
         self._events.setdefault(key, asyncio.Event()).set()
+
+    @contextlib.asynccontextmanager
+    async def waiting(self) -> AsyncIterator[None]:
+        """Give up this module's worker slot while it waits on other modules.
+
+        A module that starts early and later waits for others (geo) must not
+        sit on a slot those others need, or a small EARWITNESS_PARALLEL
+        deadlocks. Outside run_case (tests) there is no gate and this is a no-op.
+        """
+        gate = self._gate
+
+        if gate is None:
+            yield
+            return
+
+        gate.release()
+
+        try:
+            yield
+        finally:
+            await gate.acquire()
 
     async def wait_for(self, key: str, timeout: float = 600.0) -> Any:
         event = self._events.setdefault(key, asyncio.Event())

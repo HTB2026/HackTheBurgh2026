@@ -10,7 +10,7 @@ import { useHealth } from '../../lib/health'
 import { CaseMediaContext } from '../../lib/media'
 import { canChange, ownerName, useAuth } from '../../lib/auth'
 import { ago, dateShort, mmss } from '../../lib/format'
-import { mediaNoun, modulePlain, VERDICT } from '../../lib/plain'
+import { mediaNoun, VERDICT } from '../../lib/plain'
 import { mockName } from '../../lib/mock'
 import { Alert, Badge, Icon } from '../ui/ui'
 import { AiPicker, aiName } from '../AiPicker'
@@ -21,6 +21,7 @@ import { FrameScan } from './FrameScan'
 import { BrowserTranscript } from './BrowserTranscript'
 import { FindingsBoard } from './Findings'
 import { geoFinding, LocationHero } from './GeoBoard'
+import { AnalysisLive } from './AnalysisLive'
 import { hasLocation } from '../../lib/geo'
 import { Reveal } from './Reveal'
 import { Answers, Detail, EvidenceFile, Exhibits, exhibitItems, hasNotes, KeyMoments, mapPoints, MethodSection, NotesSection } from './Sections'
@@ -124,13 +125,10 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
             {state.error ? (
               <p className="verdict-line err-line">This case could not be opened: {state.error}</p>
             ) : !info ? (
-              <div className="skeleton" aria-label="Loading the case">
-                <span />
-                <span />
-                <span className="tall" />
-              </div>
+              <AnalysisLive state={state} facts={facts} />
             ) : (
               <>
+                {facts.running && <AnalysisLive state={state} facts={facts} />}
                 <LocationHero state={state} facts={facts} points={points}>
                   {dossier && (
                     <button className="reveal-btn" onClick={() => setRevealing(true)}>
@@ -396,24 +394,8 @@ function CaseHead({
 }
 
 function VerdictLine({ state, facts, conn }: { state: CaseState; facts: Facts; conn: string }) {
-  const noun = mediaNoun(facts.kind)
-  if (facts.running) {
-    const m = facts.currentModule
-    const phrase = m ? modulePlain(m, state.modules[m]?.title).does.split(/[.:]/)[0] : 'Opening the file'
-    return (
-      <section className="verdict-block">
-        <p className="verdict-line">Examining this {noun}…</p>
-        <div className="run-line">
-          <span className="muted">
-            {phrase}… {facts.checksDone} of {facts.checksTotal} checks done
-          </span>
-          <div className="progress">
-            <span style={{ width: `${facts.checksTotal ? (facts.checksDone / facts.checksTotal) * 100 : 0}%` }} />
-          </div>
-        </div>
-      </section>
-    )
-  }
+  // While checks run, the live analysis panel at the top says what is happening.
+  if (facts.running) return null
   const flagged = facts.counts.critical + facts.counts.warning
   const flaggedModules = new Set(state.findings.filter((f) => f.severity === 'critical' || f.severity === 'warning').map((f) => f.module))
   const passed = state.moduleOrder.filter((n) => state.modules[n]?.status === 'done' && !flaggedModules.has(n)).length

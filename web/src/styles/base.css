@@ -1081,16 +1081,18 @@ a[data-tip],
   color: var(--orange-t);
 }
 .card-meta .card-owner {
-  overflow: hidden;
-  text-overflow: ellipsis;
-  min-width: 0;
+  display: inline-flex;
+  flex: none;
 }
 .card-owner img {
-  width: 16px;
-  height: 16px;
+  width: 22px;
+  height: 22px;
   border-radius: 50%;
-  vertical-align: -3px;
-  margin-right: 3px;
+  object-fit: cover;
+}
+.card-meta .card-owner i {
+  margin: 0;
+  font-size: 18px;
 }
 /* Handling record in the evidence file section */
 .custody {
