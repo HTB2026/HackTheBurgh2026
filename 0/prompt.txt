@@ -1,0 +1,13 @@
+deploy to prod
+
+---
+
+so remove the uncommited filed duh
+
+---
+
+can you make uploads that were half way through analysis during a restart recoverable?
+
+---
+
+push and deploy to prod
