@@ -1,0 +1,15 @@
+{
+  "tool_use_id": "toolu_011h1Y2rDaEr7FzN4TMUDnUP",
+  "agent_id": "a1408e14968501465",
+  "subagent_type": "general-purpose",
+  "task_description": "Adversarial review of geo pipeline",
+  "token_usage": {
+    "input_tokens": 38,
+    "cache_creation_tokens": 117470,
+    "cache_read_tokens": 1708631,
+    "output_tokens": 27287,
+    "api_call_count": 19
+  },
+  "started_at": "2026-11-08T01:05:06.738045Z",
+  "completed_at": "2026-11-08T01:17:13.307681Z"
+}

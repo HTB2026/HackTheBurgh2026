@@ -3,8 +3,9 @@
   "checkpoint_id": "01M6WC51964DSZDDXQTQP4S4S5",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 6,
+  "checkpoints_count": 16,
   "files_touched": [
+    "docs/PROTOCOL.md",
     "src/earwitness/modules/brief.py",
     "src/earwitness/server/jobs.py",
     "web/src/components/case/CasePage.tsx"
@@ -16,24 +17,38 @@
       "compact_transcript": "/0/transcript.jsonl",
       "content_hash": "/0/content_hash.txt",
       "prompt": "/0/prompt.txt"
+    },
+    {
+      "metadata": "/1/metadata.json",
+      "transcript": "/1/full.jsonl",
+      "compact_transcript": "/1/transcript.jsonl",
+      "content_hash": "/1/content_hash.txt",
+      "prompt": "/1/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 54,
-    "cache_creation_tokens": 15163,
-    "cache_read_tokens": 12868798,
-    "output_tokens": 7185,
-    "api_call_count": 21
+    "input_tokens": 350,
+    "cache_creation_tokens": 256298,
+    "cache_read_tokens": 36229692,
+    "output_tokens": 140628,
+    "api_call_count": 154,
+    "subagent_tokens": {
+      "input_tokens": 24,
+      "cache_creation_tokens": 109599,
+      "cache_read_tokens": 914009,
+      "output_tokens": 19653,
+      "api_call_count": 12
+    }
   },
   "redaction": {
-    "replacements": 64,
+    "replacements": 89,
     "layers": {
       "betterleaks": 56,
       "connection_string": 0,
       "credential_key": 0,
-      "credential_value": 2,
+      "credential_value": 19,
       "credentialed_uri": 2,
-      "entropy": 16,
+      "entropy": 24,
       "key_context": 0,
       "provider_token": 0,
       "shell_stdin": 0
