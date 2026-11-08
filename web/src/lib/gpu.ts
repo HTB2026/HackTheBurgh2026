@@ -195,3 +195,42 @@ export function textureWithMips(device: GPUDevice, source: ImageBitmap | HTMLCan
   device.queue.submit([enc.finish()])
   return texture
 }
+
+const BLIT = /* wgsl */ `
+@group(0) @binding(0) var img: texture_2d<f32>;
+@group(0) @binding(1) var samp: sampler;
+struct O { @builtin(position) pos: vec4f, @location(0) uv: vec2f };
+@vertex fn vs(@builtin(vertex_index) i: u32) -> O {
+  let xy = vec2f(f32((i << 1u) & 2u), f32(i & 2u));
+  var o: O;
+  o.pos = vec4f(xy * 2.0 - 1.0, 0.0, 1.0);
+  o.uv = vec2f(xy.x, 1.0 - xy.y);
+  return o;
+}
+@fragment fn fs(o: O) -> @location(0) vec4f { return textureSampleLevel(img, samp, o.uv, 0.0); }
+`
+const blits = new WeakMap<GPUDevice, { pipeline: GPURenderPipeline; sampler: GPUSampler }>()
+
+/** Draw a texture stretched over a whole canvas. */
+export function drawTexture(gpu: Gpu, ctx: GPUCanvasContext, texture: GPUTexture) {
+  let b = blits.get(gpu.device)
+  if (!b) {
+    const module = gpu.device.createShaderModule({ code: BLIT, label: 'blit' })
+    b = {
+      pipeline: gpu.device.createRenderPipeline({
+        layout: 'auto',
+        vertex: { module, entryPoint: 'vs' },
+        fragment: { module, entryPoint: 'fs', targets: [{ format: gpu.format }] },
+      }),
+      sampler: gpu.device.createSampler({ magFilter: 'linear', minFilter: 'linear' }),
+    }
+    blits.set(gpu.device, b)
+  }
+  const enc = gpu.device.createCommandEncoder({ label: 'blit' })
+  const pass = enc.beginRenderPass({ colorAttachments: [{ view: ctx.getCurrentTexture().createView(), loadOp: 'clear', storeOp: 'store', clearValue: { r: 0, g: 0, b: 0, a: 1 } }] })
+  pass.setPipeline(b.pipeline)
+  pass.setBindGroup(0, gpu.device.createBindGroup({ layout: b.pipeline.getBindGroupLayout(0), entries: [{ binding: 0, resource: texture.createView() }, { binding: 1, resource: b.sampler }] }))
+  pass.draw(3)
+  pass.end()
+  gpu.device.queue.submit([enc.finish()])
+}
