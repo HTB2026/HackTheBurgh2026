@@ -275,6 +275,7 @@ class Vision:
             content=content,
             schema=_SCHEMA,
             name="visual_report",
+            effort=ctx.by_effort(low="low"),
         )
         frame_time = {i: (None if still else t) for i, t in enumerate(times, start=1)}
         model = result.get("_model", "model")

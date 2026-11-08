@@ -45,6 +45,8 @@ export interface CaseInfo {
   modules: ModuleInfo[]
   /** AI provider this run used ('openai' | 'gemini'); null when AI was off. */
   ai_provider?: AiProvider | null
+  /** How much work the run spends: low (Quick), medium (Standard), high (Deep). */
+  effort?: Effort
   // newer backends; optional on older cases
   sha256?: string
   md5?: string
@@ -78,6 +80,8 @@ export interface CustodyEntry {
   by: Owner | null
   modules?: string[]
   ai_provider?: AiProvider | null
+  /** How much work the run spends: low (Quick), medium (Standard), high (Deep). */
+  effort?: Effort
 }
 
 export interface StreamInfo {
@@ -125,6 +129,8 @@ export interface CaseSummary {
   place_confidence?: string | null
   /** AI provider chosen for this case; null means the server default. */
   ai_provider?: AiProvider | null
+  /** How much work the run spends: low (Quick), medium (Standard), high (Deep). */
+  effort?: Effort
   owner?: Owner | null
   history?: CustodyEntry[]
   case: CaseInfo | null
@@ -195,6 +201,7 @@ export interface AuthConfig {
 }
 
 export type AiProvider = 'openai' | 'gemini' | 'ollama'
+export type Effort = 'low' | 'medium' | 'high'
 
 export interface Health {
   ok: boolean

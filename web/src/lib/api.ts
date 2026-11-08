@@ -1,5 +1,5 @@
 import { authHeaders } from './auth'
-import type { AiProvider, CaseEvent, CaseSummary, EnhanceResult, Health } from './types'
+import type { AiProvider, CaseEvent, CaseSummary, Effort, EnhanceResult, Health } from './types'
 import { isMock, mockCases, mockEnhance, mockEvents, mockHealth, mockRemove, mockRerun, mockUpload } from './mockBackend'
 
 async function json<T>(res: Response): Promise<T> {
@@ -23,13 +23,17 @@ export const api = {
   // Writes need an Auth0 login; authHeaders() starts one when logged out.
   remove: async (id: string) =>
     isMock() ? mockRemove(id) : fetch(`/api/cases/${id}`, { method: 'DELETE', headers: await authHeaders() }).then((r) => json<{ deleted: boolean }>(r)),
-  rerun: async (id: string, aiProvider?: AiProvider | null) =>
-    isMock()
+  rerun: async (id: string, aiProvider?: AiProvider | null, effort?: Effort | null) => {
+    const params = new URLSearchParams()
+    if (aiProvider) params.set('ai_provider', aiProvider)
+    if (effort) params.set('effort', effort)
+    return isMock()
       ? mockRerun(id)
-      : fetch(`/api/cases/${id}/rerun${aiProvider ? `?ai_provider=${aiProvider}` : ''}`, {
+      : fetch(`/api/cases/${id}/rerun${params.size ? `?${params}` : ''}`, {
           method: 'POST',
           headers: await authHeaders(),
-        }).then((r) => json<CaseSummary>(r)),
+        }).then((r) => json<CaseSummary>(r))
+  },
   enhance: (id: string, body: { time_s?: number; x: number; y: number; w: number; h: number; frames?: number }) =>
     isMock() ? mockEnhance(id, body) : fetch(`/api/cases/${id}/enhance`, {
       method: 'POST',
@@ -43,6 +47,7 @@ export async function uploadEvidence(
   file: File,
   aiProvider: AiProvider | null,
   onProgress: (fraction: number) => void,
+  effort?: Effort,
 ): Promise<CaseSummary> {
   if (isMock()) return mockUpload(file, onProgress)
   const headers = await authHeaders()
@@ -50,6 +55,7 @@ export async function uploadEvidence(
     const xhr = new XMLHttpRequest()
     const params = new URLSearchParams()
     if (aiProvider) params.set('ai_provider', aiProvider)
+    if (effort && effort !== 'medium') params.set('effort', effort)
     const q = params.size ? `?${params}` : ''
     xhr.open('POST', `/api/cases${q}`)
     for (const [k, v] of Object.entries(headers)) xhr.setRequestHeader(k, v)

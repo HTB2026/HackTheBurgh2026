@@ -32,6 +32,14 @@ _INSTRUCTIONS = (
     "health or other sensitive traits."
 )
 
+# Deep runs listen harder for what places the countryside: wildlife has ranges.
+_DEEP = (
+    '\nAlso add the key "wildlife": ["each bird, insect, frog or farm animal you can name, '
+    "with the species where you are confident (e.g. 'common wood pigeon', 'skylark', 'cicadas', "
+    "'sheep'), and where it lives\"], and put rural clues (tractors, livestock, church bells, "
+    "wind in trees, running water) in location_clues."
+)
+
 
 class Sounds:
     name = "sounds"
@@ -59,7 +67,9 @@ class Sounds:
             raise Skip("could not extract audio")
 
         out.progress(0.3, "listening")
-        heard = await provider.listen(ctx.workdir, path, _INSTRUCTIONS)
+        heard = await provider.listen(
+            ctx.workdir, path, _INSTRUCTIONS + ctx.by_effort(medium="", high=_DEEP)
+        )
         sounds = [s for s in heard.get("sounds") or [] if isinstance(s, dict)]
         out.artifact(
             "heard",
@@ -141,6 +151,19 @@ class Sounds:
                 kind="inferred",
                 tags=["sound", "time"],
                 data={"time_clues": heard["time_clues"]},
+            )
+
+        wildlife = [str(w) for w in heard.get("wildlife") or [] if w]
+
+        if wildlife:
+            out.finding(
+                "info",
+                "Wildlife heard: " + ", ".join(wildlife[:3])[:70],
+                "; ".join(wildlife)
+                + ". Species have ranges, so this narrows the region; birds are named by an AI listener and can be wrong.",
+                kind="inferred",
+                tags=["sound", "wildlife", "location"],
+                data={"wildlife": wildlife},
             )
 
         ctx.publish(self.name, heard)

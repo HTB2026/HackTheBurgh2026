@@ -37,6 +37,8 @@ dev = [
 
 [tool.ruff]
 line-length = 88
+# Third-party code kept as published (see src/earwitness/vendor/*/__init__.py).
+extend-exclude = ["src/earwitness/vendor"]
 
 [tool.ruff.lint]
 select = ["E", "F", "W", "I"]

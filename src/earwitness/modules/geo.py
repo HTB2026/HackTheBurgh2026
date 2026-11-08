@@ -27,6 +27,8 @@ import glob
 import json
 import math
 import os
+from datetime import datetime
+from datetime import timezone
 from typing import Any
 
 import cv2
@@ -34,6 +36,7 @@ import httpx
 import numpy as np
 
 from earwitness import ai
+from earwitness.modules import geo_deep
 from earwitness.modules.base import CaseContext
 from earwitness.modules.base import Reporter
 from earwitness.modules.base import Skip
@@ -43,7 +46,7 @@ _FRAMES = 6
 _INTAKE_FRAMES = 2
 _CANDIDATES = 4
 _VERIFIED = 0.6
-_USER_AGENT = "earwitness-forensics/0.2 (hackathon research demo)"
+_USER_AGENT = "Earwitness/0.2 (https://earwitness.ussr.pl; hackathon research demo)"
 
 
 def _has_location(lat: Any, lon: Any, radius_km: Any) -> bool:
@@ -303,11 +306,11 @@ async def _satellite(
 
 
 async def _pick_frames(
-    ctx: CaseContext, duration: float
+    ctx: CaseContext, duration: float, count: int = _FRAMES
 ) -> list[tuple[float, np.ndarray]]:
-    """The sharpest frame from each of _FRAMES equal stretches of the clip."""
+    """The sharpest frame from each of ``count`` equal stretches of the clip."""
     chosen = []
-    edges = np.linspace(0.2, max(0.4, duration - 0.2), _FRAMES + 1)
+    edges = np.linspace(0.2, max(0.4, duration - 0.2), count + 1)
 
     for a, b in zip(edges[:-1], edges[1:]):
         best = None
@@ -318,9 +321,7 @@ async def _pick_frames(
             if frame is None:
                 continue
 
-            sharp = float(
-                cv2.Laplacian(cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY), cv2.CV_64F).var()
-            )
+            sharp = _sharpness(frame)
 
             if best is None or sharp > best[0]:
                 best = (sharp, float(t), frame)
@@ -329,6 +330,54 @@ async def _pick_frames(
             chosen.append((best[1], best[2]))
 
     return chosen
+
+
+def _sharpness(rgb: np.ndarray) -> float:
+    return float(cv2.Laplacian(cv2.cvtColor(rgb, cv2.COLOR_RGB2GRAY), cv2.CV_64F).var())
+
+
+_QUARTERS = ["top-left", "top-right", "bottom-left", "bottom-right"]
+
+
+def _quarters(image: np.ndarray, max_side: int = 1024) -> list[np.ndarray]:
+    """The four quarters of a picture, so small signs and plates stay legible."""
+    h, w = image.shape[:2]
+    tiles = []
+
+    for row in range(2):
+        for col in range(2):
+            tile = image[
+                row * h // 2 : (row + 1) * h // 2, col * w // 2 : (col + 1) * w // 2
+            ]
+            scale = min(1.0, max_side / max(tile.shape[:2]))
+            tiles.append(
+                cv2.resize(tile, None, fx=scale, fy=scale, interpolation=cv2.INTER_AREA)
+                if scale < 1
+                else tile
+            )
+
+    return tiles
+
+
+def _trusted_time(
+    provenance: dict[str, Any], enf: dict[str, Any], still: bool
+) -> tuple[datetime | None, str | None]:
+    """A UTC capture time good enough for the sun and the weather, and where it came from."""
+    if enf.get("confident") and enf.get("dated_start"):
+        when, source = enf["dated_start"], "the power-grid dating"
+    elif provenance.get("start_guess") and (not still or provenance.get("tz_known")):
+        # A photo's clock without a UTC offset is local time: hours off, useless for the sun.
+        when, source = provenance["start_guess"], "the file's own timestamp"
+    else:
+        return None, None
+
+    if isinstance(when, str):
+        when = datetime.fromisoformat(when)
+
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=timezone.utc)
+
+    return when, source
 
 
 class Geo:
@@ -352,51 +401,28 @@ class Geo:
         if info is None and not still:
             raise Skip("no video stream")
 
+        deep = ctx.effort == "high"
+        # Quick runs reason briefly; Standard and Deep think hard.
+        reasoning = ctx.by_effort(low="low", medium="high")
         out.progress(0.05, "choosing frames")
 
         if still:
-            # The whole photograph, at the resolution the model takes, plus the
-            # four quarters so that small signs and plates stay legible.
-            image = ctx.image()
-            h, w = image.shape[:2]
-            frames = [(0.0, ctx.image_scaled(1280))]
-
-            for row in range(2):
-                for col in range(2):
-                    tile = image[
-                        row * h // 2 : (row + 1) * h // 2,
-                        col * w // 2 : (col + 1) * w // 2,
-                    ]
-                    scale = min(1.0, 1024 / max(tile.shape[:2]))
-                    frames.append(
-                        (
-                            0.0,
-                            cv2.resize(
-                                tile,
-                                None,
-                                fx=scale,
-                                fy=scale,
-                                interpolation=cv2.INTER_AREA,
-                            )
-                            if scale < 1
-                            else tile,
-                        )
-                    )
+            frames = [(0.0, ctx.image_scaled(1280))] + [
+                (0.0, tile) for tile in _quarters(ctx.image())
+            ]
         else:
-            frames = await _pick_frames(ctx, info.duration_s)
+            frames = await _pick_frames(
+                ctx, info.duration_s, ctx.by_effort(low=3, medium=_FRAMES, high=10)
+            )
 
         if not frames:
             raise Skip("no decodable frames")
 
-        evidence: list[dict[str, str]] = []
+        # Each unit is a caption and an image, so passes can take different subsets.
+        frame_units: list[list[dict[str, str]]] = []
+        crop_units: list[list[dict[str, str]]] = []
         frame_paths = []
-        labels = [
-            "the whole picture",
-            "top-left quarter",
-            "top-right quarter",
-            "bottom-left quarter",
-            "bottom-right quarter",
-        ]
+        labels = ["the whole picture"] + [f"{q} quarter" for q in _QUARTERS]
 
         for number, (time_s, frame) in enumerate(frames):
             path = out.path(f"frame{number}.jpg")
@@ -419,22 +445,40 @@ class Geo:
                     f"frame{number}", "image", f"Frame analysed @ {time_s:.1f}s",
                     file=path, time_s=time_s,
                 )  # fmt: skip
-            evidence += [
-                {
-                    "type": "input_text",
-                    "text": f"Image {number + 1} ({labels[number]}):"
-                    if still
-                    else f"Frame {number + 1} (at {time_s:.1f} s):",
-                },
-                _image_part(path),
-            ]
+            frame_units.append(
+                [
+                    {
+                        "type": "input_text",
+                        "text": f"Image {number + 1} ({labels[number]}):"
+                        if still
+                        else f"Frame {number + 1} (at {time_s:.1f} s):",
+                    },
+                    _image_part(path),
+                ]
+            )
+
+        if deep and not still:
+            # Quarter crops of the two sharpest frames: small details at full size.
+            for time_s, frame in sorted(frames, key=lambda f: -_sharpness(f[1]))[:2]:
+                for name, tile in zip(_QUARTERS, _quarters(frame, 768)):
+                    path = out.path(f"quarter_{time_s:.1f}_{name}.jpg")
+                    cv2.imwrite(
+                        path,
+                        cv2.cvtColor(tile, cv2.COLOR_RGB2BGR),
+                        [cv2.IMWRITE_JPEG_QUALITY, 90],
+                    )
+                    crop_units.append(
+                        [{"type": "input_text", "text": f"{name} quarter of the frame at {time_s:.1f}s, enlarged:"},
+                         _image_part(path, 768)]
+                    )  # fmt: skip
 
         # ---- geo-sleuth intake: zoomed edges/corners + OCR -------------------
         ocr_lines: list[str] = []
         skill = os.environ.get("EARWITNESS_GEOSLEUTH")
         script = os.path.join(os.path.expanduser(skill or ""), "scripts", "intake.py")
+        intake_frames = ctx.by_effort(low=0, medium=_INTAKE_FRAMES, high=4)
 
-        if skill and os.path.isfile(script):
+        if skill and os.path.isfile(script) and intake_frames:
             if still:
                 full_path = out.path("full.jpg")
                 cv2.imwrite(
@@ -451,11 +495,11 @@ class Geo:
                             cv2.imread(p[1], cv2.IMREAD_GRAYSCALE), cv2.CV_64F
                         ).var()
                     ),
-                )[:_INTAKE_FRAMES]
+                )[:intake_frames]
 
             for number, (time_s, path) in enumerate(sharpest):
                 out.progress(
-                    0.1 + 0.15 * number / _INTAKE_FRAMES,
+                    0.1 + 0.15 * number / len(sharpest),
                     f"geo-sleuth intake @ {time_s:.1f}s",
                 )
                 target = out.path(f"intake{number}")
@@ -492,13 +536,17 @@ class Geo:
                     part = _image_part(crop, 640)
 
                     if part:
-                        evidence += [
-                            {
-                                "type": "input_text",
-                                "text": f"Zoomed crop {os.path.basename(crop)} of frame at {time_s:.1f}s:",
-                            },
-                            part,
-                        ]
+                        crop_units.append(
+                            [
+                                {
+                                    "type": "input_text",
+                                    "text": f"Zoomed crop {os.path.basename(crop)} of frame at {time_s:.1f}s:",
+                                },
+                                part,
+                            ]
+                        )
+
+        evidence = [part for unit in frame_units + crop_units for part in unit]
 
         # ---- non-visual clues (never the file's metadata or GPS) --------------
         out.progress(0.3, "collecting clues from sound, text and light")
@@ -507,6 +555,13 @@ class Geo:
             ocr = await ctx.wait_for("ocr") or {}
             heard = await ctx.wait_for("sounds") or {}
             light = await ctx.wait_for("light") or {}
+
+            if deep:
+                # The capture time (for the sun and the weather) and what the
+                # frames look like. GPS is fetched but never shown to the model.
+                provenance = await ctx.wait_for("provenance") or {}
+                enf = await ctx.wait_for("enf") or {}
+                vision = await ctx.wait_for("vision") or {}
         ocr_lines += list(ocr.get("lines", []))[:30]
         clues = [
             "Text read in the frames (OCR): "
@@ -535,7 +590,9 @@ class Geo:
                             "location_clues",
                             "time_clues",
                             "people_estimate",
+                            "wildlife",
                         )
+                        if heard.get(k)
                     },
                     ensure_ascii=False,
                 )
@@ -545,6 +602,97 @@ class Geo:
             clues.append(
                 f"The lighting flickers at {2 * light['grid_hz']} Hz: the mains grid is {light['grid_hz']} Hz."
             )
+
+        # ---- Deep: inventory, time, sun and stars ----------------------------------
+        inventory: dict[str, Any] = {}
+        zones: list[dict[str, Any]] = []
+        notes: list[str] = []  # what each Deep method did, for the record
+        when, when_source = None, None
+
+        if deep:
+            out.progress(0.33, "taking an inventory of every clue in the frames")
+            inventory = await provider.structured(
+                ctx.workdir, instructions=geo_deep.INVENTORY, content=evidence,
+                schema=geo_deep.INVENTORY_SCHEMA, name="geolocation_inventory", effort="high",
+            )  # fmt: skip
+            listed = geo_deep.inventory_text(inventory)
+            out.artifact(
+                "inventory", "text", "Clue inventory: what a geolocation expert reads in the frames",
+                data={"text": listed},
+            )  # fmt: skip
+            clues.append("Clue inventory from a first look at the frames:\n" + listed)
+            when, when_source = _trusted_time(provenance, enf, still)
+
+            if still and provenance.get("utc_offset_h") is not None:
+                clues.append(
+                    f"The camera's clock was set to UTC{provenance['utc_offset_h']:+g} (from the file; "
+                    "travellers do not always change it)."
+                )
+
+            seen_sun = inventory.get("sun_elevation_deg")
+
+            if (
+                when is not None
+                and inventory.get("sun_visible")
+                and isinstance(seen_sun, (int, float))
+                and 0 < seen_sun < 90
+            ):
+                ring = geo_deep.sun_ring(when, float(seen_sun))
+                zones.append(ring)
+                clues.append(
+                    f"The sun stood about {seen_sun:.0f}° above the horizon at {when:%Y-%m-%d %H:%M} UTC "
+                    f"(time from {when_source}). That puts the camera on a ring {ring['radius_km']:,.0f} km "
+                    f"(±{ring['width_km'] / 2:,.0f} km) from ({ring['lat']:.1f}, {ring['lon']:.1f}), where the sun was overhead."
+                )
+                notes.append(
+                    f"Sun: {ring['label']} ({inventory.get('sun_basis', '')})."
+                )
+            elif inventory.get("sun_visible"):
+                notes.append(
+                    "Sun: visible, but "
+                    + (
+                        "its height could not be judged."
+                        if when
+                        else "no trustworthy capture time, so it cannot place the camera."
+                    )
+                )
+
+            if inventory.get("stars_visible"):
+                out.progress(0.36, "identifying the stars in the sky")
+                # Full resolution for photos: faint stars vanish when scaled down.
+                night = (
+                    ctx.image_scaled(3000)
+                    if still
+                    else max((f for _, f in frames), key=_sharpness)
+                )
+                solved = await asyncio.to_thread(geo_deep.solve_stars, night)
+
+                if solved:
+                    tilt = inventory.get("camera_tilt_deg")
+                    altitude = (
+                        float(tilt) + solved["above_centre_deg"]
+                        if isinstance(tilt, (int, float))
+                        else None
+                    )
+                    found = geo_deep.star_zones(
+                        solved["ra"], solved["dec"], altitude, when
+                    )
+                    zones += found
+                    clues.append(
+                        f"The star field was identified (centre RA {solved['ra']:.1f}°, Dec {solved['dec']:+.1f}°, "
+                        f"{solved['matches']} stars matched): {'; '.join(z['label'] for z in found)}."
+                    )
+                    notes.append(
+                        f"Stars: plate-solved offline ({solved['matches']} stars, RA {solved['ra']:.1f}°, "
+                        f"Dec {solved['dec']:+.1f}°); "
+                        + "; ".join(z["label"] for z in found)
+                        + "."
+                    )
+                else:
+                    notes.append(
+                        "Stars: visible, but the star field could not be identified "
+                        "(too few sharp stars, or clouds, glare or a long exposure smeared them)."
+                    )
 
         clue_text = "\n".join(clues)
         out.artifact(
@@ -556,26 +704,78 @@ class Geo:
 
         # ---- propose ---------------------------------------------------------------
         out.progress(0.4, "proposing candidate places")
-        proposal = await provider.structured(
-            ctx.workdir,
-            instructions=_PROPOSE,
-            content=[{"type": "input_text", "text": clue_text}, *evidence],
-            schema=_PROPOSE_SCHEMA,
-            name="geolocation_candidates",
-            effort="high",
-        )
-        candidates = proposal["candidates"][:_CANDIDATES]
+
+        async def propose(units: list[list[dict[str, str]]]) -> dict[str, Any]:
+            return await provider.structured(
+                ctx.workdir,
+                instructions=_PROPOSE,
+                content=[
+                    {"type": "input_text", "text": clue_text},
+                    *(p for u in units for p in u),
+                ],
+                schema=_PROPOSE_SCHEMA,
+                name="geolocation_candidates",
+                effort=reasoning,
+            )
+
+        if deep:
+            # Three independent looks at different frames; where they agree is evidence.
+            out.progress(0.4, "three independent analysts propose places")
+            subsets = [
+                frame_units + crop_units,
+                frame_units[0::2] + crop_units[1::2],
+                frame_units[1::2] + crop_units[0::2],
+            ]
+            runs = await asyncio.gather(
+                *(propose(s) for s in subsets if s), return_exceptions=True
+            )
+            proposals = [r for r in runs if isinstance(r, dict)]
+
+            if not proposals:
+                raise next(r for r in runs if isinstance(r, BaseException))
+
+            proposal = proposals[0]
+            candidates = geo_deep.cluster([p["candidates"] for p in proposals], keep=5)
+        else:
+            proposal = await propose(frame_units + crop_units)
+            candidates = proposal["candidates"][
+                : ctx.by_effort(low=3, medium=_CANDIDATES)
+            ]
 
         # ---- verify against the real world ------------------------------------------
         out.progress(0.6, "fetching reference photos and satellite views")
-        references: list[dict[str, Any]] = []
+        rows = None
+
+        if deep and inventory.get("horizon") in (
+            "natural_hills",
+            "mountains",
+            "natural_flat",
+        ):
+            for _, frame in frames:
+                rows = geo_deep.frame_skyline(frame)
+
+                if rows is not None:
+                    aspect = frame.shape[1] / frame.shape[0]
+                    break
+
+        seen_weather = (
+            f"{vision.get('weather', '')} {vision.get('scene', '')}" if deep else ""
+        )
 
         async with httpx.AsyncClient(
             timeout=20, follow_redirects=True, headers={"User-Agent": _USER_AGENT}
         ) as client:
+            overpass = asyncio.Semaphore(2)
 
             async def gather(index: int, candidate: dict[str, Any]) -> dict[str, Any]:
-                item: dict[str, Any] = {"index": index, "candidate": candidate}
+                item: dict[str, Any] = {
+                    "index": index,
+                    "candidate": candidate,
+                    "ground": [],
+                    "checks": [],
+                }
+                lat, lon = float(candidate["latitude"]), float(candidate["longitude"])
+                radius = float(candidate["radius_km"])
 
                 if candidate.get("landmark"):
                     photo = out.path(f"ref{index}_wiki.jpg")
@@ -584,92 +784,271 @@ class Geo:
                     if wiki:
                         item["wiki"] = wiki | {"path": photo}
 
-                if float(candidate["radius_km"]) <= 25:
-                    sat = out.path(f"ref{index}_sat.jpg")
-                    span = min(3.0, max(0.6, float(candidate["radius_km"]) * 2))
+                spans = (
+                    [1.0, 4.0] if deep and radius <= 50
+                    else [min(3.0, max(0.6, radius * 2))] if radius <= 25 else []
+                )  # fmt: skip
 
-                    if await _satellite(
-                        client, candidate["latitude"], candidate["longitude"], span, sat
-                    ):
-                        item["satellite"] = {"path": sat, "span_km": span}
+                for n, span in enumerate(spans):
+                    sat = out.path(f"ref{index}_sat{'' if n == 0 else n + 1}.jpg")
+
+                    if await _satellite(client, lat, lon, span, sat):
+                        item.setdefault("satellites", []).append(
+                            {"path": sat, "span_km": span}
+                        )
+
+                if not deep:
+                    return item
+
+                ground = await geo_deep.commons_photos(
+                    client, lat, lon, int(max(1000, min(5000, radius * 1000)))
+                )
+                street = await geo_deep.mapillary_photos(client, lat, lon)
+
+                for n, photo in enumerate([*ground, *street]):
+                    kind = "ground" if n < len(ground) else "street"
+                    path = out.path(f"ref{index}_{kind}{n}.jpg")
+
+                    if await geo_deep.download(client, photo["thumb"], path):
+                        item["ground"].append(photo | {"path": path, "kind": kind})
+
+                async with overpass:
+                    found = await geo_deep.osm_features(
+                        client, lat, lon, list(inventory.get("osm_features") or [])
+                    )
+
+                if found:
+                    item["checks"] += geo_deep.osm_checks(found)
+
+                if rows is not None:
+                    sky = await geo_deep.skyline_check(client, rows, aspect, lat, lon)
+
+                    if sky:
+                        item["skyline"] = {
+                            k: v for k, v in sky.items() if k not in ("ok", "text")
+                        }
+                        item["checks"].append({"ok": sky["ok"], "text": sky["text"]})
+
+                if when is not None:
+                    sun = geo_deep.sun_check(when, lat, lon, inventory)
+
+                    if sun:
+                        item["checks"].append(sun)
+
+                    weather = await geo_deep.weather_check(lat, lon, when, seen_weather)
+
+                    if weather:
+                        item["checks"].append(weather)
+
+                for zone in zones:
+                    if zone["kind"] == "band":
+                        inside = zone["lat_min"] <= lat <= zone["lat_max"]
+                        item["checks"].append(
+                            {
+                                "ok": inside,
+                                "text": f"{'inside' if inside else 'outside'} the band: {zone['label']}",
+                            }
+                        )
+                    elif zone["kind"] == "ring":
+                        inside = geo_deep.in_ring((lat, lon), zone)
+                        item["checks"].append(
+                            {
+                                "ok": inside,
+                                "text": f"{'on' if inside else 'off'} the ring: {zone['label']}",
+                            }
+                        )
 
                 return item
 
-            references = await asyncio.gather(
-                *(gather(i, c) for i, c in enumerate(candidates))
-            )
-
-        verify_content: list[dict[str, str]] = list(
-            evidence[: 2 * min(5 if still else 4, len(frame_paths))]
-        )
-
-        # A fixed shuffled order, without the proposer's odds, so the verifier
-        # cannot simply rubber-stamp the favourite.
-        order = sorted(
-            references,
-            key=lambda r: (hash(r["candidate"]["place"]) ^ hash(ctx.id)) % 9973,
-        )
-
-        for item in order:
-            c = item["candidate"]
-            verify_content.append(
-                {
-                    "type": "input_text",
-                    "text": f"Candidate {item['index']}: {c['place']} ({c['latitude']:.5f}, {c['longitude']:.5f}), landmark '{c['landmark'] or 'none'}'.",
-                }
-            )
-
-            if "wiki" in item and (part := _image_part(item["wiki"]["path"], 768)):
-                verify_content += [
-                    {
-                        "type": "input_text",
-                        "text": f"Wikipedia photo of '{item['wiki']['title']}':",
-                    },
-                    part,
+            async def assess(
+                cands: list[dict[str, Any]], base: int
+            ) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+                refs = list(
+                    await asyncio.gather(
+                        *(gather(base + i, c) for i, c in enumerate(cands))
+                    )
+                )
+                content: list[dict[str, str]] = [
+                    p for u in frame_units[: 5 if still else 4] for p in u
                 ]
-                out.artifact(
-                    f"ref{item['index']}_wiki",
-                    "image",
-                    f"Reference: Wikipedia photo of {item['wiki']['title']} (candidate {item['index'] + 1})",
-                    file=item["wiki"]["path"],
+                # A fixed shuffled order, without the proposer's odds, so the verifier
+                # cannot simply rubber-stamp the favourite.
+                order = sorted(
+                    refs,
+                    key=lambda r: (hash(r["candidate"]["place"]) ^ hash(ctx.id)) % 9973,
                 )
 
-            if "satellite" in item and (
-                part := _image_part(item["satellite"]["path"], 640)
+                for item in order:
+                    c = item["candidate"]
+                    content.append(
+                        {
+                            "type": "input_text",
+                            "text": f"Candidate {item['index']}: {c['place']} ({c['latitude']:.5f}, {c['longitude']:.5f}), landmark '{c['landmark'] or 'none'}'.",
+                        }
+                    )
+
+                    if "wiki" in item and (
+                        part := _image_part(item["wiki"]["path"], 768)
+                    ):
+                        content += [
+                            {
+                                "type": "input_text",
+                                "text": f"Wikipedia photo of '{item['wiki']['title']}':",
+                            },
+                            part,
+                        ]
+                        out.artifact(
+                            f"ref{item['index']}_wiki", "image",
+                            f"Reference: Wikipedia photo of {item['wiki']['title']} (candidate {item['index'] + 1})",
+                            file=item["wiki"]["path"],
+                        )  # fmt: skip
+
+                    for n, sat in enumerate(item.get("satellites", [])):
+                        if part := _image_part(sat["path"], 640):
+                            content += [
+                                {"type": "input_text", "text": f"Satellite view, {sat['span_km']:.1f} km across, centred on the candidate:"},
+                                part,
+                            ]  # fmt: skip
+                            out.artifact(
+                                f"ref{item['index']}_sat{'' if n == 0 else n + 1}", "image",
+                                f"Satellite at candidate {item['index'] + 1}, {sat['span_km']:.0f} km across: {c['place'][:60]}",
+                                file=sat["path"],
+                            )  # fmt: skip
+
+                    for n, photo in enumerate(item["ground"]):
+                        if part := _image_part(photo["path"], 768):
+                            where = (
+                                "Wikimedia Commons"
+                                if photo["kind"] == "ground"
+                                else "Mapillary street-level"
+                            )
+                            content += [
+                                {"type": "input_text", "text": f"{where} photo taken {photo['dist_m']} m from the candidate:"},
+                                part,
+                            ]  # fmt: skip
+                            out.artifact(
+                                f"ref{item['index']}_{photo['kind']}{n}", "image",
+                                f"{where} photo {photo['dist_m']:,} m from candidate {item['index'] + 1}",
+                                file=photo["path"], data={"url": photo.get("url", "")},
+                            )  # fmt: skip
+
+                    if item["checks"]:
+                        marks = {True: "PASS", False: "FAIL", None: "unclear"}
+                        content.append(
+                            {"type": "input_text", "text": "Automatic checks for this candidate: "
+                             + "; ".join(f"{marks[k['ok']]}: {k['text']}" for k in item["checks"])}
+                        )  # fmt: skip
+
+                if not any(
+                    "wiki" in r or r.get("satellites") or r["ground"] for r in refs
+                ):
+                    top = cands[0]
+                    return refs, {
+                        "verdicts": [], "best": -1, "place": top["place"], "latitude": top["latitude"],
+                        "longitude": top["longitude"], "radius_km": max(float(top["radius_km"]), 50.0),
+                        "confidence": "low", "explanation": "No landmark photo or satellite view could be checked, so the best guess stays unverified.",
+                    }  # fmt: skip
+
+                out.progress(
+                    0.75 if base == 0 else 0.9,
+                    "verifying candidates against the real world",
+                )
+                checked = await provider.structured(
+                    ctx.workdir, instructions=_VERIFY, content=content,
+                    schema=_VERIFY_SCHEMA, name="geolocation_verification", effort=reasoning,
+                )  # fmt: skip
+
+                return refs, checked
+
+            references, verdict = await assess(candidates, 0)
+            scores = {v["candidate"]: v for v in verdict["verdicts"]}
+
+            # ---- Deep: one coarse-to-fine round when the answer is only regional ----
+            def confirmed(v: dict[str, Any], s: dict[int, Any]) -> bool:
+                return (
+                    v["best"] >= 0 and s.get(v["best"], {}).get("match", 0) >= _VERIFIED
+                )
+
+            if (
+                deep
+                and not confirmed(verdict, scores)
+                and _has_location(
+                    verdict["latitude"], verdict["longitude"], verdict["radius_km"]
+                )
+                and float(verdict["radius_km"]) <= 150
             ):
-                verify_content += [
-                    {
-                        "type": "input_text",
-                        "text": f"Satellite view, {item['satellite']['span_km']:.1f} km across, centred on the candidate:",
-                    },
-                    part,
-                ]
-                out.artifact(
-                    f"ref{item['index']}_sat",
-                    "image",
-                    f"Satellite at candidate {item['index'] + 1}: {c['place'][:60]}",
-                    file=item["satellite"]["path"],
+                out.progress(0.82, f"zooming in on {verdict['place'][:40]}")
+                lat, lon = float(verdict["latitude"]), float(verdict["longitude"])
+                region: list[dict[str, str]] = []
+
+                for span in (40.0, 12.0):
+                    path = out.path(f"region_{span:.0f}km.jpg")
+
+                    if await _satellite(client, lat, lon, span, path) and (
+                        part := _image_part(path, 768)
+                    ):
+                        region += [
+                            {
+                                "type": "input_text",
+                                "text": f"Satellite view of the region, {span:.0f} km across:",
+                            },
+                            part,
+                        ]
+
+                summary = "\n".join(
+                    f"Earlier candidate {r['index']}: {r['candidate']['place']}; checks: "
+                    + ("; ".join(k["text"] for k in r["checks"]) or "none")
+                    for r in references
                 )
+                try:
+                    refined = await provider.structured(
+                        ctx.workdir, instructions=geo_deep.REFINE,
+                        content=[
+                            {"type": "input_text", "text": f"{clue_text}\n\nRegion: around {verdict['place']} "
+                             f"({lat:.4f}, {lon:.4f}), radius {float(verdict['radius_km']):.0f} km.\n{summary}"},
+                            *region, *(p for u in frame_units[:4] for p in u),
+                        ],
+                        schema=_PROPOSE_SCHEMA, name="geolocation_refine", effort="high",
+                    )  # fmt: skip
+                except Exception as error:  # noqa: BLE001 - the first answer stands
+                    notes.append(f"Refinement failed: {error}")
+                    refined = None
 
-        has_references = any("wiki" in r or "satellite" in r for r in references)
-        out.progress(0.75, "verifying candidates against the real world")
+                if refined:
+                    spots = [
+                        c
+                        | {
+                            "radius_km": min(3.0, float(c["radius_km"])),
+                            "refined": True,
+                        }
+                        for c in refined["candidates"][:5]
+                    ]
+                    more, second = await assess(spots, len(candidates))
+                    second_scores = {v["candidate"]: v for v in second["verdicts"]}
+                    candidates = candidates + spots
+                    references = references + more
+                    scores |= second_scores
+                    notes.append(
+                        f"Refinement: {len(spots)} exact spots near {verdict['place']} checked."
+                    )
 
-        if has_references:
-            verdict = await provider.structured(
-                ctx.workdir, instructions=_VERIFY, content=verify_content,
-                schema=_VERIFY_SCHEMA, name="geolocation_verification", effort="high",
-            )  # fmt: skip
-        else:
-            top = candidates[0]
-            verdict = {
-                "verdicts": [], "best": -1, "place": top["place"], "latitude": top["latitude"],
-                "longitude": top["longitude"], "radius_km": max(float(top["radius_km"]), 50.0),
-                "confidence": "low", "explanation": "No landmark photo or satellite view could be checked, so the best guess stays unverified.",
-            }  # fmt: skip
+                    if confirmed(second, second_scores):
+                        verdict = second
 
-        scores = {v["candidate"]: v for v in verdict["verdicts"]}
+        # Deterministic guard: two or more failed automatic checks rule a candidate out.
+        for item in references:
+            failed = [k["text"] for k in item["checks"] if k["ok"] is False]
+            score = scores.get(item["index"])
+
+            if len(failed) >= 2 and score and score["match"] > 0.55:
+                score["match"] = 0.55
+                score["mismatches"] = [
+                    *score["mismatches"],
+                    "automatic checks failed: " + "; ".join(failed),
+                ]
+
         best = verdict["best"]
-        ranked = sorted((float(v["match"]) for v in verdict["verdicts"]), reverse=True)
+        ranked = sorted((float(v["match"]) for v in scores.values()), reverse=True)
         margin = 0.0
         cluster_km = 0.0
 
@@ -712,8 +1091,9 @@ class Geo:
         verified = verified and located
 
         # ---- report -----------------------------------------------------------------------
-        async with ctx.waiting():
-            provenance = await ctx.wait_for("provenance") or {}
+        if not deep:
+            async with ctx.waiting():
+                provenance = await ctx.wait_for("provenance") or {}
 
         gps = provenance.get("location")
         error_km = None
@@ -749,8 +1129,20 @@ class Geo:
             "map",
             "map",
             "Geolocation: leads, verified answer and GPS",
-            data={"points": points},
+            data={"points": points, **({"zones": zones} if zones else {})},
         )
+        checks = {r["index"]: r["checks"] for r in references if r["checks"]}
+
+        def proposed(c: dict[str, Any]) -> str:
+            if c.get("refined"):
+                return "refined spot"
+
+            text = f"{c['probability'] * 100:.0f}%"
+
+            return text + (
+                f" ({c['votes']}/{c['passes']} passes)" if c.get("passes") else ""
+            )
+
         out.artifact(
             "leads",
             "table",
@@ -764,23 +1156,60 @@ class Geo:
                     "match",
                     "matches",
                     "mismatches",
-                ],
+                ]
+                + (["checks"] if checks else []),
                 "rows": [
                     [
                         i + 1,
                         c["place"],
                         c["landmark"] or "-",
-                        f"{c['probability'] * 100:.0f}%",
+                        proposed(c),
                         f"{scores[i]['match'] * 100:.0f}%"
                         if i in scores
                         else "not checked",
                         "; ".join(scores[i]["matches"]) if i in scores else "",
                         "; ".join(scores[i]["mismatches"]) if i in scores else "",
                     ]
+                    + (
+                        [
+                            "; ".join(
+                                (
+                                    "✓ "
+                                    if k["ok"]
+                                    else "✗ "
+                                    if k["ok"] is False
+                                    else "? "
+                                )
+                                + k["text"]
+                                for k in checks.get(i, [])
+                            )
+                        ]
+                        if checks
+                        else []
+                    )
                     for i, c in enumerate(candidates)
                 ],
             },  # fmt: skip
         )
+
+        for item in references:
+            if item.get("skyline"):
+                sky = item["skyline"]
+                out.artifact(
+                    f"skyline{item['index']}", "series",
+                    f"Terrain horizon at candidate {item['index'] + 1} ({sky['score'] * 100:.0f}% skyline match)",
+                    data={"x": list(range(360)), "series": [{"name": "horizon from the elevation model", "y": sky["profile"]}],
+                          "x_unit": "° heading", "y_unit": "°", "marks": {"best match": sky["heading"]}},
+                )  # fmt: skip
+
+        if notes:
+            out.artifact(
+                "deep",
+                "text",
+                "Deep geolocation: what each extra method did",
+                data={"text": "\n".join(notes)},
+            )
+
         detail = (
             verdict["explanation"]
             + " Region reasoning: "
@@ -798,6 +1227,27 @@ class Geo:
                 else " Nothing could be checked against real-world reference photos, so this stays a lead."
             )
 
+        if deep and 0 <= best < len(candidates):
+            lead = candidates[best]
+
+            if lead.get("passes"):
+                detail += f" {lead['votes']} of {lead['passes']} independent passes proposed this place."
+
+            passed = [k["text"] for k in checks.get(best, []) if k["ok"]]
+            failed = [k["text"] for k in checks.get(best, []) if k["ok"] is False]
+
+            if passed or failed:
+                detail += (
+                    " Automatic checks there: "
+                    + "; ".join(
+                        [
+                            *(f"passed: {t}" for t in passed),
+                            *(f"failed: {t}" for t in failed),
+                        ]
+                    )
+                    + "."
+                )
+
         if error_km is not None:
             detail += f" The file's GPS (never shown to the model) is {error_km:,.1f} km away."
 
@@ -807,6 +1257,7 @@ class Geo:
             "radius_km": verdict["radius_km"], "confidence": verdict["confidence"], "location_available": located,
             "verified": verified, "match": scores.get(best, {}).get("match") if best >= 0 else None,
             "candidates": candidates, "error_km": error_km, "model": proposal.get("_model"),
+            "effort": ctx.effort, "checks": checks, "zones": zones,
             # Kept for the case brief: verification replaces the old second-opinion check.
             "corroboration": {"agree": verified, "second_guess": "reference imagery did not match" if not verified else verdict["place"], "apart_km": None},
         }  # fmt: skip

@@ -4,7 +4,8 @@ import { useHealth } from '../lib/health'
 import { canChange, ownerName, useAuth } from '../lib/auth'
 import { FeedFilter, isFiltered, matches, useFeedFilter } from './FeedFilter'
 import { AI_EXPERIMENTAL, AI_HINT, AI_LABEL, aiChoices } from './AiPicker'
-import type { AiProvider } from '../lib/types'
+import { EFFORT_HINT, EFFORT_LABEL, EffortTabs, storedEffort } from './EffortPicker'
+import type { AiProvider, Effort } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
 import { ago, dateShort, mmss } from '../lib/format'
 import { useCaseMeta } from '../lib/caseMeta'
@@ -65,6 +66,11 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
           <span data-tip={`Examined ${dateShort(c.created)}`}>
             <Icon name="calendar" /> {ago(c.created)}
           </span>
+          {c.effort && c.effort !== 'medium' && (
+            <span data-tip={`${EFFORT_LABEL[c.effort]} effort: ${EFFORT_HINT[c.effort]}`}>
+              <Icon name="gauge-high" /> {EFFORT_LABEL[c.effort]}
+            </span>
+          )}
           {c.owner && (
             <span className="card-owner" data-tip={`Uploaded by ${ownerName(c.owner)}`} aria-label={`Uploaded by ${ownerName(c.owner)}`}>
               {c.owner.picture ? <img src={c.owner.picture} alt="" referrerPolicy="no-referrer" /> : <Icon name="circle-user" />}
@@ -106,6 +112,11 @@ export function Landing({ examine }: { examine?: boolean }) {
     setAiProvider(provider)
     try { localStorage.setItem('earwitness.ai', provider) } catch { /* Private mode may block storage. */ }
   }
+  const [effort, setEffort] = useState<Effort>(storedEffort)
+  const pickEffort = (e: Effort) => {
+    setEffort(e)
+    try { localStorage.setItem('earwitness.effort', e) } catch { /* Private mode may block storage. */ }
+  }
   const [cases, setCases] = useState<CaseSummary[] | null>(null)
   // Older backends need their events fetched to determine the verdict.
   const needMeta = useMemo(() => (cases ? cases.filter((c) => c.verdict === undefined) : null), [cases])
@@ -144,14 +155,14 @@ export function Landing({ examine }: { examine?: boolean }) {
       setErr(null)
       setUpload({ name: file.name, p: 0 })
       try {
-        const s = await uploadEvidence(file, aiChosen, (p) => setUpload({ name: file.name, p }))
+        const s = await uploadEvidence(file, aiChosen, (p) => setUpload({ name: file.name, p }), effort)
         location.hash = `#/case/${s.id}`
       } catch (e) {
         setErr(String((e as Error).message ?? e))
         setUpload(null)
       }
     },
-    [aiChosen],
+    [aiChosen, effort],
   )
 
   // the whole page accepts a dropped file
@@ -260,6 +271,7 @@ export function Landing({ examine }: { examine?: boolean }) {
               <small className="faint">Runs speech, sounds, the visual analyst, geolocation and the written summary.</small>
             </div>
           )}
+          <EffortTabs value={effort} onChange={pickEffort} disabled={!!upload} />
           <div
             ref={dropRef}
             className={`dropzone ${upload ? 'busy' : ''}`}

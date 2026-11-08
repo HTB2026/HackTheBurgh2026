@@ -265,6 +265,8 @@ class Pulse:
     name = "pulse"
     title = "PULSE (rPPG)"
     description = "Heart rate of people on camera from invisible skin-colour changes; Eulerian magnification."
+    # Slow and rarely decisive: left out of Quick runs.
+    min_effort = "medium"
 
     async def run(self, ctx: CaseContext, out: Reporter) -> None:
         info = await ctx.video_info()

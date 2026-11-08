@@ -1524,6 +1524,7 @@ class Brief:
                     content=[{"type": "input_text", "text": str(evidence)}],
                     schema=_SCHEMA,
                     name="case_brief",
+                    effort=ctx.by_effort(low="low"),
                 )
                 data["headline"] = narrative["headline"]
                 data["narrative"] = narrative["summary"]
@@ -1554,6 +1555,7 @@ class Brief:
                     ],
                     schema=_DOSSIER_SCHEMA,
                     name="dossier",
+                    effort=ctx.by_effort(low="low"),
                 )
                 known = {f.id for f in findings}
                 dossier["lines"] = [

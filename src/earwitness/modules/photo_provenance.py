@@ -982,6 +982,7 @@ class PhotoProvenance:
         published["start_guess"] = start_guess
         published["start_candidates"] = [start_guess] if start_guess else []
         published["tz_known"] = offset_h is not None
+        published["utc_offset_h"] = offset_h
 
         # ---- place --------------------------------------------------------------------------------
         out.progress(0.7, "locating")

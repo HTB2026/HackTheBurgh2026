@@ -232,6 +232,15 @@ def media_kind_of(path: str) -> MediaKind:
     return "video"
 
 
+EFFORTS = ("low", "medium", "high")
+# What the UI calls each level.
+EFFORT_WORDS = {"low": "Quick", "medium": "Standard", "high": "Deep"}
+
+
+def effort_at_least(effort: str, minimum: str) -> bool:
+    return EFFORTS.index(effort) >= EFFORTS.index(minimum)
+
+
 class CaseContext:
     """Everything modules share about one piece of evidence.
 
@@ -254,6 +263,20 @@ class CaseContext:
         # The run's worker-slot semaphore (set by run_case), so a module that
         # waits on others mid-run can lend its slot out; see ``waiting``.
         self._gate: asyncio.Semaphore | None = None
+
+    # ---- effort ---------------------------------------------------------------
+    @property
+    def effort(self) -> str:
+        """How much work this run may spend: "low", "medium" (default) or "high"."""
+        value = self.options.get("effort")
+
+        return value if value in EFFORTS else "medium"
+
+    def by_effort(self, low: Any = None, medium: Any = None, high: Any = None) -> Any:
+        """The value for this run's effort; a level left out falls back to medium."""
+        value = {"low": low, "medium": medium, "high": high}[self.effort]
+
+        return medium if value is None else value
 
     # ---- still images -----------------------------------------------------
     def image(self) -> np.ndarray | None:

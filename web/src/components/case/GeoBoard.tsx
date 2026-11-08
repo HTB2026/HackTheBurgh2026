@@ -5,7 +5,7 @@ import type { CaseState } from '../../lib/state'
 import { usePlayback } from '../../lib/playback'
 import { mmss } from '../../lib/format'
 import { Icon, Modal } from '../ui/ui'
-import { distanceText, radiusText, type MapPoint } from '../viz/MapView'
+import { distanceText, radiusText, type MapPoint, type MapZone } from '../viz/MapView'
 import { MapSection } from './Sections'
 import { MapOrGlobe } from './MapOrGlobe'
 import { isTerminal } from '../../lib/state'
@@ -19,6 +19,10 @@ export interface Candidate {
   radius_km: number
   probability?: number
   evidence?: string[]
+  /** Deep runs: how many independent proposal passes named this place, out of how many. */
+  votes?: number
+  passes?: number
+  refined?: boolean
 }
 
 export function geoFinding(state: CaseState): Finding | null {
@@ -211,9 +215,18 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
   const gps = facts.gps
   const w = win >= 0 ? cands[win] : undefined
 
-  const [extra, setExtra] = useState<'how' | 'others' | 'clues' | 'key' | null>(null)
+  // Deep runs: automatic checks per candidate, the clue inventory, and zones for the map.
+  const checks: Record<string, DeepCheck[]> = d.checks ?? {}
+  const zones: MapZone[] = Array.isArray(d.zones) ? d.zones : []
+  const inventory: string = state.artifacts['geo:inventory']?.data?.text ?? ''
+  const deepNotes: string = state.artifacts['geo:deep']?.data?.text ?? ''
+  const deep = d.effort === 'high' || !!inventory || Object.keys(checks).length > 0
+  const ground = ['ground', 'street'].flatMap((k) => [0, 1, 2, 3].map((n) => state.artifacts[`geo:ref${win}_${k}${n}`])).find(Boolean)
+
+  const [extra, setExtra] = useState<'how' | 'checks' | 'others' | 'clues' | 'key' | null>(null)
   const extras = [
     { key: 'how' as const, icon: 'circle-question', label: 'How it was worked out', count: null },
+    ...(deep ? [{ key: 'checks' as const, icon: 'list-check', label: 'Deep checks', count: Object.values(checks).flat().length || null }] : []),
     ...(others.length ? [{ key: 'others' as const, icon: 'list-ol', label: 'Other places considered', count: others.length }] : []),
     ...(clues ? [{ key: 'clues' as const, icon: 'ear-listen', label: 'Clues from sound and text', count: null }] : []),
     ...(points.length ? [{ key: 'key' as const, icon: 'map-location-dot', label: 'Exact coordinates', count: null }] : []),
@@ -258,6 +271,7 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
           {located && d.radius_km ? ` · within ${radiusText(d.radius_km * 1000).slice(1)}` : ''}
           {located && d.confidence ? ` · ${d.confidence} confidence` : ''}
           {located && typeof d.match === 'number' ? ` · ${Math.round(d.match * 100)}% match with real-world imagery` : ''}
+          {located && w?.passes ? ` · ${w.votes} of ${w.passes} independent passes agree` : ''}
           {searching && (geoModule?.message || `Reading the ${noun}’s pixels and sounds for clues.`)}
           {!located && !searching && gps && (
             <>
@@ -282,7 +296,7 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
 
       <div className={`loc-grid ${located ? '' : 'map-only'}`}>
         <div className="loc-map">
-          {points.length ? <MapOrGlobe points={points} height={340} /> : <div className="loc-map-empty">{searching ? <i className="pulse-dot big" /> : <Icon name="earth-europe" />}</div>}
+          {points.length ? <MapOrGlobe points={points} zones={zones} height={340} /> : <div className="loc-map-empty">{searching ? <i className="pulse-dot big" /> : <Icon name="earth-europe" />}</div>}
         </div>
         {located && (
           <div className="loc-proof">
@@ -293,6 +307,7 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
               </figure>
               <Thumb a={state.artifacts[`geo:ref${win}_wiki`]} label={w?.landmark ? `Wikipedia: ${w.landmark}` : 'Landmark photo'} empty="No landmark photo" />
               <Thumb a={state.artifacts[`geo:ref${win}_sat`]} label="Satellite view" empty={(w?.radius_km ?? 0) > 25 ? 'Area too large for satellite' : 'No satellite view'} />
+              {ground && <Thumb a={ground} label={ground.id.includes('street') ? 'Street level nearby' : 'Photo taken nearby'} empty="" />}
             </div>
             {frames.length > 1 && (
               <div className="gb-frames">
@@ -327,8 +342,11 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
             <p className="loc-how muted">
               The AI looks only at the pixels and sounds (never the file’s GPS), proposes places, then each place is checked against a Wikipedia photo of its
               landmark and a satellite view. A place is <b>verified</b> only when the real-world pictures clearly match the {noun}.
+              {deep &&
+                ' This was a Deep run: three analysts proposed places independently, and each place was also checked against photos taken nearby, OpenStreetMap, the terrain on the skyline, and the sun, stars and weather where the time is known.'}
             </p>
           )}
+          {extra === 'checks' && <DeepChecks cands={cands} checks={checks} win={win} inventory={inventory} notes={deepNotes} zones={zones} />}
           {extra === 'others' && (
             <div className="gb-rows">
               {others.map((i, rank) => (
@@ -341,5 +359,47 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
         </div>
       )}
     </section>
+  )
+}
+
+interface DeepCheck {
+  ok: boolean | null
+  text: string
+}
+
+/** What the Deep run's extra methods found, per candidate, plus the clue inventory. */
+function DeepChecks({ cands, checks, win, inventory, notes, zones }: { cands: Candidate[]; checks: Record<string, DeepCheck[]>; win: number; inventory: string; notes: string; zones: MapZone[] }) {
+  const order = cands.map((_, i) => i).filter((i) => checks[String(i)]?.length)
+  order.sort((a, b) => (a === win ? -1 : b === win ? 1 : a - b))
+  return (
+    <div className="deep-checks">
+      {order.length === 0 && <p className="muted">No automatic check could be run on these places.</p>}
+      {order.map((i) => (
+        <div key={i} className="deep-cand">
+          <b>
+            {i === win && <Icon name="circle-check" className="c-green-i" />} {cands[i].place}
+          </b>
+          <ul>
+            {checks[String(i)].map((k, n) => (
+              <li key={n} className={k.ok === true ? 'pass' : k.ok === false ? 'fail' : 'unclear'}>
+                <Icon name={k.ok === true ? 'check' : k.ok === false ? 'xmark' : 'question'} /> {k.text}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+      {zones.length > 0 && (
+        <p className="muted small">
+          <Icon name="circle-notch" /> Yellow lines on the map: {zones.map((z) => z.label).join('; ')}. The camera must be on or between them.
+        </p>
+      )}
+      {notes && <pre className="loc-clues">{notes}</pre>}
+      {inventory && (
+        <details className="gb-why">
+          <summary>Clue inventory: what the analyst read in the frames</summary>
+          <pre className="loc-clues">{inventory}</pre>
+        </details>
+      )}
+    </div>
   )
 }

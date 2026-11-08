@@ -9,12 +9,12 @@ built SPA (`web/dist`) is served by the same server at `/`. In dev, Vite proxies
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | GET | `/api/health` | | `{ok, openai: bool, ai: {providers: ["openai"\|"gemini"\|"ollama"], default}, modules: [{name,title,description}]}` |
-| GET | `/api/cases` | | `[CaseSummary]`, newest first (includes `verdict`, `summary_plain`, `ai_provider`, and `place` / `place_confidence` (the plain "where" answer, null when unknown) once the brief exists) |
-| POST | `/api/cases` | multipart `file`; optional query `ai_provider` (`openai`\|`gemini`\|`ollama`, must be in `health.ai.providers`, else 400) | `CaseSummary` (analysis starts immediately) |
+| GET | `/api/cases` | | `[CaseSummary]`, newest first (includes `verdict`, `summary_plain`, `ai_provider`, `effort`, and `place` / `place_confidence` (the plain "where" answer, null when unknown) once the brief exists) |
+| POST | `/api/cases` | multipart `file`; optional query `ai_provider` (`openai`\|`gemini`\|`ollama`, must be in `health.ai.providers`, else 400) and `effort` (`low`\|`medium`\|`high`, default `medium`, else 400) | `CaseSummary` (analysis starts immediately) |
 | GET | `/api/cases/{id}` | | `{summary: CaseSummary, events: [Event]}` (full replay) |
 | GET | `/api/me` | bearer token | `{id, name, picture, admin}`: the caller as cases record them |
 | DELETE | `/api/cases/{id}` | bearer token; owner or admin, else 403 | `{deleted}` |
-| POST | `/api/cases/{id}/rerun` | bearer token; owner or admin, else 403. Optional query `ai_provider` (switches the case's provider and saves it) | `CaseSummary` |
+| POST | `/api/cases/{id}/rerun` | bearer token; owner or admin, else 403. Optional query `ai_provider` (switches the case's provider and saves it) and `effort` (likewise) | `CaseSummary` |
 | GET | `/api/cases/{id}/files/{path}` | | artifact files (PNG/JPG/MP4); URLs arrive ready-made in events |
 | POST | `/api/cases/{id}/enhance` | JSON `{time_s, x, y, w, h, frames?}`; x,y,w,h are 0..1 fractions of the video frame | `{single_url, enhanced_url, frames_used, scale, source_px:[w,h], time_s}` |
 
@@ -25,8 +25,19 @@ of their Auth0 user id (pages are public, so neither that id nor the email is
 shown); `name` is null for cases uploaded before names were recorded, and the
 whole owner is null for cases from before logins (anyone signed in may change
 those). `history = [{action: "uploaded"|"reran", at (unix s), by: owner-shaped,
-modules?, ai_provider?}]` is the handling record. Both live in `case.json`, so a
+modules?, ai_provider?, effort?}]` is the handling record. Both live in `case.json`, so a
 rerun keeps them, and both are repeated in the `case` event.
+
+**Effort.** `options.effort` (in `case.json`) is `low` (UI: Quick), `medium`
+(Standard, the default and the behaviour before effort existed) or `high`
+(Deep). The `case` event carries the run's `effort`. Modules read it through
+`ctx.effort` / `ctx.by_effort(low=, medium=, high=)`; a module class with
+`min_effort` above the case's level is reported `skipped` ("Runs only at …
+effort or above.") and publishes `None`. Geo at `high` adds the clue inventory,
+three clustered proposal passes, ground photos, OSM, terrain skyline, sun,
+stars, weather and a refinement round (`modules/geo_deep.py`); its finding's
+`data` then has `effort`, `checks` (`{candidate index: [{ok: bool|null, text}]}`)
+and `zones`, and candidates may carry `votes`/`passes` (ensemble) or `refined`.
 
 On startup the server reruns every case that has no `done` event (status `interrupted`, then `queued`), one at a time and from the start: its listeners get a `reset`, and the new run logs why right after its `case` event. Uploads still in progress at the restart (only `evidence.*.part` on disk) are deleted.
 
@@ -100,7 +111,7 @@ An artifact with an id already seen replaces the old one. Kinds:
 | `markers` | `data {times:[…], …}` | tick marks on the timeline |
 | `table` | `data {rows:[[…]], columns?:[…]}` | monospace table |
 | `bars` | `data {labels:[…], values:[…]}` | bar chart |
-| `map` | `data {points:[{lat,lon,label,accuracy_m?,kind}]}` | dark map (Leaflet + CARTO dark tiles), accuracy circle |
+| `map` | `data {points:[{lat,lon,label,accuracy_m?,kind}], zones?:[{kind:"ring",lat,lon,radius_km,width_km,label} \| {kind:"band",lat_min,lat_max,label}]}` | dark map (Leaflet + CARTO dark tiles), accuracy circle; zones (where a measurement allows the camera to be) as yellow geodesic lines that do not move the view |
 | `image` / `heatmap` | `url`, optional `data {caption, time_s, overlay?:bool}` | gallery; heatmaps can overlay the video at `time_s` |
 | `video` | `url` MP4 (e.g. pulse colour magnification) | player |
 | `text` | `data {text}` | prose panel |

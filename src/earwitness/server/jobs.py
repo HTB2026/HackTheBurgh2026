@@ -15,9 +15,11 @@ import psycopg
 from earwitness import ai
 from earwitness import db
 from earwitness.modules import registry
+from earwitness.modules.base import EFFORT_WORDS
 from earwitness.modules.base import CaseContext
 from earwitness.modules.base import Reporter
 from earwitness.modules.base import Skip
+from earwitness.modules.base import effort_at_least
 from earwitness.modules.base import run_tool
 from earwitness.server import auth
 
@@ -98,6 +100,7 @@ class Case:
             "place": where["answer"] if located else None,
             "place_confidence": where["confidence"] if located else None,
             "ai_provider": self.options.get("ai_provider"),
+            "effort": self.options.get("effort") or "medium",
             "owner": self.owner,
             "history": self.history,
         }
@@ -454,6 +457,8 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
                 "kind": kind,
                 # The AI provider this run uses (None: no AI key on the server).
                 "ai_provider": ai.choice(case.options),
+                # How much work this run spends (low | medium | high).
+                "effort": ctx.effort,
                 "duration_s": float(probe.get("format", {}).get("duration") or 0),
                 "size_bytes": int(
                     probe.get("format", {}).get("size")
@@ -526,6 +531,17 @@ async def run_case(case: Case, *, only: list[str] | None = None) -> None:
         for dependency in depends:
             if any(m.name == dependency for m in modules):
                 await ctx.wait_for(dependency)
+
+        minimum = getattr(module, "min_effort", "low")
+
+        if not effort_at_least(ctx.effort, minimum):
+            ctx.publish(module.name, None)
+            case.emit(
+                {"type": "module", "module": module.name, "status": "skipped",
+                 "progress": 1, "message": f"Runs only at {EFFORT_WORDS[minimum]} effort or above."}
+            )  # fmt: skip
+
+            return
 
         started = time.time()
 

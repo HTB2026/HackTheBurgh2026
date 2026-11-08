@@ -14,6 +14,48 @@ export interface MapPoint {
   heading_deg?: number | null
 }
 
+/**
+ * Where a measurement allows the camera to be: a ring (every place a fixed
+ * distance from a point, e.g. where the sun stood at the height seen) or a
+ * band of latitudes (e.g. where a star field is above the horizon).
+ */
+export type MapZone =
+  | { kind: 'ring'; lat: number; lon: number; radius_km: number; width_km: number; label: string }
+  | { kind: 'band'; lat_min: number; lat_max: number; label: string }
+
+/** A small circle on the sphere (not the projected circle Leaflet draws), split where it crosses the antimeridian. */
+function geodesicRing(lat: number, lon: number, radius_km: number, steps = 180): [number, number][][] {
+  const d = radius_km / 6371
+  const φ1 = (lat * Math.PI) / 180
+  const λ1 = (lon * Math.PI) / 180
+  const lines: [number, number][][] = [[]]
+  let last: number | null = null
+  for (let i = 0; i <= steps; i++) {
+    const θ = (2 * Math.PI * i) / steps
+    const φ2 = Math.asin(Math.sin(φ1) * Math.cos(d) + Math.cos(φ1) * Math.sin(d) * Math.cos(θ))
+    const λ2 = λ1 + Math.atan2(Math.sin(θ) * Math.sin(d) * Math.cos(φ1), Math.cos(d) - Math.sin(φ1) * Math.sin(φ2))
+    const lonDeg = ((((λ2 * 180) / Math.PI + 540) % 360) - 180)
+    if (last != null && Math.abs(lonDeg - last) > 180) lines.push([])
+    lines[lines.length - 1].push([(φ2 * 180) / Math.PI, lonDeg])
+    last = lonDeg
+  }
+  return lines
+}
+
+function drawZone(z: MapZone, g: L.LayerGroup) {
+  const style = { color: '#fbbd08', weight: 1.5, opacity: 0.85, interactive: true }
+  const tip = (line: L.Polyline) => line.bindTooltip(esc(z.label), { sticky: true }).addTo(g)
+  if (z.kind === 'ring') {
+    for (const line of geodesicRing(z.lat, z.lon, z.radius_km)) tip(L.polyline(line, { ...style, weight: 2 }))
+    // The edges of the allowed band, fainter.
+    for (const r of [z.radius_km - z.width_km / 2, z.radius_km + z.width_km / 2])
+      if (r > 0) for (const line of geodesicRing(z.lat, z.lon, r)) tip(L.polyline(line, { ...style, weight: 1, opacity: 0.45, dashArray: '4 6' }))
+  } else {
+    for (const lat of [z.lat_min, z.lat_max])
+      if (lat > -89.9 && lat < 89.9) tip(L.polyline([[lat, -180], [lat, 180]], { ...style, dashArray: '4 6' }))
+  }
+}
+
 /** A wedge of `spread` degrees either side of `heading`, `length_m` long, as lat/lon vertices. */
 function wedge(lat: number, lon: number, heading: number, length_m: number, spread = 25, steps = 12): [number, number][] {
   const out: [number, number][] = [[lat, lon]]
@@ -48,7 +90,7 @@ export function distanceText(km: number): string {
  * Dark street map (OpenStreetMap, darkened in CSS) with a Satellite option (Esri).
  * Red pins: measured GPS. Purple, dashed: AI estimates. A line joins GPS and AI estimate.
  */
-export function MapView({ points, height = 360 }: { points: MapPoint[]; height?: number }) {
+export function MapView({ points, zones = [], height = 360 }: { points: MapPoint[]; zones?: MapZone[]; height?: number }) {
   const el = useRef<HTMLDivElement>(null)
   const map = useRef<L.Map | null>(null)
   const layer = useRef<L.LayerGroup | null>(null)
@@ -136,12 +178,14 @@ export function MapView({ points, height = 360 }: { points: MapPoint[]; height?:
     }
   }, [])
 
-  const key = JSON.stringify(pts)
+  const key = JSON.stringify([pts, zones])
   useEffect(() => {
     const m = map.current
     const g = layer.current
     if (!m || !g) return
     g.clearLayers()
+    // Zones do not move the view: they span continents, the answer does not.
+    for (const z of zones) drawZone(z, g)
     if (!pts.length) {
       m.setView([30, 0], 2)
       return

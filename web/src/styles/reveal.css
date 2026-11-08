@@ -709,3 +709,13 @@
   left: 52px;
   top: 10px;
 }
+
+/* Deep checks tab: one block per candidate, pass/fail lines */
+.deep-checks { display: grid; gap: 12px; }
+.deep-cand ul { list-style: none; margin: 6px 0 0; padding: 0; display: grid; gap: 4px; }
+.deep-cand li { font-size: 13.5px; color: var(--muted); }
+.deep-cand li i { width: 16px; text-align: center; margin-right: 4px; }
+.deep-cand li.pass i { color: var(--green-t); }
+.deep-cand li.fail { color: inherit; }
+.deep-cand li.fail i { color: var(--red-t); }
+.deep-cand li.unclear i { color: var(--muted); }

@@ -40,7 +40,41 @@ export async function loadMock(name: string): Promise<CaseEvent[]> {
       }
     }
   }
+  if (new URLSearchParams(location.search).has('deep')) addDeep(showcase)
   return showcase
+}
+
+/** `&deep`: dress the showcase up as a Deep-effort run (inventory, checks, sun ring). */
+function addDeep(events: CaseEvent[]) {
+  for (const event of events) {
+    if (event.type === 'case') event.case.effort = 'high'
+    if (event.type === 'finding' && event.finding.module === 'geo' && Array.isArray(event.finding.data?.candidates)) {
+      const data = event.finding.data
+      data.effort = 'high'
+      data.candidates = data.candidates.map((c: object, i: number) => ({ ...c, votes: i === 0 ? 3 : 1, passes: 3 }))
+      data.checks = {
+        0: [
+          { ok: true, text: 'a river mapped nearby' },
+          { ok: true, text: 'sun 41° high there, frames suggest ~38°' },
+          { ok: true, text: 'weather there was partly cloudy, which fits' },
+          { ok: null, text: 'skyline match 52% (inconclusive: trees and buildings hide the terrain)' },
+        ],
+        1: [
+          { ok: false, text: 'a river seen, but none mapped within 3 km' },
+          { ok: false, text: 'off the ring: Sun 38° high at 14:05 UTC' },
+        ],
+      }
+      data.zones = [{ kind: 'ring', lat: 15.2, lon: -32.1, radius_km: 4200, width_km: 1780, label: 'Sun 38° high at 14:05 UTC' }]
+    }
+  }
+  const at = events.findIndex((e) => e.type === 'artifact' && e.artifact.id === 'geo:map')
+  const mk = (id: string, title: string, text: string): CaseEvent => ({ type: 'artifact', artifact: { id: `geo:${id}`, module: 'geo', name: id, kind: 'text', title, url: null, time_s: null, data: { text } } } as CaseEvent)
+  events.splice(
+    at,
+    0,
+    mk('inventory', 'Clue inventory', 'Scene: urban\nDriving side: left\nRoad: none\nTerrain: flat river embankment\nSkyline: buildings\nStrongest clues: Ferris wheel with enclosed capsules; plane trees along a river wall'),
+    mk('deep', 'Deep geolocation: what each extra method did', 'Sun: Sun 38° high at 14:05 UTC (shadow of the lamp post).\nStars: none visible.\nRefinement: not needed, the first round verified the place.'),
+  )
 }
 
 /** Synthetic events for kinds the recorded streams don't contain yet (dev aid, `&extras`). */

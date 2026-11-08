@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from earwitness import ai
 from earwitness import db
 from earwitness.modules import registry
+from earwitness.modules.base import EFFORTS
 from earwitness.server import auth
 from earwitness.server import enhance
 from earwitness.server.jobs import CaseStore
@@ -67,6 +68,16 @@ def _when(text: str | None, name: str) -> datetime | None:
         raise HTTPException(400, f"{name} must be an ISO date/time")
 
     return moment if moment.tzinfo else moment.replace(tzinfo=timezone.utc)
+
+
+def _effort(name: str) -> str:
+    """One of the effort levels (low | medium | high)."""
+    name = name.strip().lower()
+
+    if name not in EFFORTS:
+        raise HTTPException(400, f"effort must be one of {list(EFFORTS)}")
+
+    return name
 
 
 def _ai_provider(name: str) -> str:
@@ -128,16 +139,21 @@ async def list_cases() -> list[dict[str, Any]]:
 async def upload(
     file: UploadFile,
     ai_provider: str | None = None,
+    effort: str | None = None,
     user: auth.User = Depends(auth.require_user),
 ) -> dict[str, Any]:
-    options: dict[str, Any] = {"original_name": file.filename, "uploaded_by": user.sub}
+    options: dict[str, Any] = {
+        "original_name": file.filename,
+        "uploaded_by": user.sub,
+        "effort": _effort(effort) if effort else "medium",
+    }
 
     if ai_provider:
         options["ai_provider"] = _ai_provider(ai_provider)
 
     case = store.create(file.filename or "evidence.mp4", options)
     case.owner = user.public()
-    case.record("uploaded", case.owner)
+    case.record("uploaded", case.owner, effort=options["effort"])
     store.save_meta(case)
 
     # Written aside and renamed when complete, so a restart mid-upload leaves no
@@ -247,6 +263,7 @@ async def rerun(
     case_id: str,
     modules: list[str] | None = None,
     ai_provider: str | None = None,
+    effort: str | None = None,
     user: auth.User = Depends(auth.require_user),
 ) -> dict[str, Any]:
     case = _case(case_id)
@@ -257,14 +274,18 @@ async def rerun(
 
     if ai_provider and ai_provider != case.options.get("ai_provider"):
         case.options["ai_provider"] = _ai_provider(ai_provider)
-        store.save_meta(case)
 
+    if effort:
+        case.options["effort"] = _effort(effort)
+
+    store.save_meta(case)
     who = user.public()
     case.record(
         "reran",
         who,
         **({"modules": modules} if modules else {}),
         ai_provider=case.options.get("ai_provider"),
+        effort=case.options.get("effort") or "medium",
     )
     store.save_meta(case)
     case.note = f"Run again at the request of {who['name']}."

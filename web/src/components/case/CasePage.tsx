@@ -14,7 +14,8 @@ import { mediaNoun, VERDICT } from '../../lib/plain'
 import { mockName } from '../../lib/mock'
 import { Alert, Badge, Icon } from '../ui/ui'
 import { AiPicker, aiName } from '../AiPicker'
-import type { AiProvider, Health } from '../../lib/types'
+import { EFFORT_HINT, EFFORT_LABEL, EffortSelect } from '../EffortPicker'
+import type { AiProvider, Effort, Health } from '../../lib/types'
 import { Player } from './Player'
 import { PhotoStage, RegionList } from './PhotoStage'
 import { browserLayer, GpuChecksContext, useGpuChecksRunner } from '../../lib/gpuChecks'
@@ -152,8 +153,8 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
             facts={facts}
             caseId={caseId}
             health={health}
-            onRerun={async (aiProvider) => {
-              await api.rerun(caseId, aiProvider)
+            onRerun={async (aiProvider, effort) => {
+              await api.rerun(caseId, aiProvider, effort)
               setNonce((n) => n + 1)
             }}
           />
@@ -314,11 +315,14 @@ function CaseHead({
   facts: Facts
   caseId: string
   health: Health | null
-  onRerun: (aiProvider: AiProvider | null) => void
+  onRerun: (aiProvider: AiProvider | null, effort: Effort | null) => void
 }) {
   const info = state.info
   const [aiProvider, setAiProvider] = useState<AiProvider | null>(null)
   const chosen = aiProvider ?? info?.ai_provider ?? null
+  const [effort, setEffort] = useState<Effort | null>(null)
+  const runEffort: Effort = info?.effort ?? 'medium'
+  const nextEffort = effort ?? runEffort
   const still = facts.kind === 'image'
   const auth = useAuth()
   const may = canChange(auth, info?.owner)
@@ -373,6 +377,11 @@ function CaseHead({
                   {facts.faces.recognisable ? `, ${facts.faces.recognisable} recognisable` : ''}
                 </Badge>
               )}
+              {runEffort !== 'medium' && (
+                <Badge icon="gauge-high" accent={runEffort === 'high' ? 'pink' : 'grey'} tip={`${EFFORT_LABEL[runEffort]} effort: ${EFFORT_HINT[runEffort]}`}>
+                  {EFFORT_LABEL[runEffort]}
+                </Badge>
+              )}
               {info.owner && (
                 <Badge
                   icon="user"
@@ -402,18 +411,23 @@ function CaseHead({
             {!mockName() && (
               <>
                 {may !== false && <AiPicker health={health} value={chosen} onChange={setAiProvider} compact />}
+                {may !== false && <EffortSelect value={nextEffort} onChange={setEffort} />}
                 <button
                   className="icon-btn"
-                  onClick={() => onRerun(aiProvider)}
+                  onClick={() => onRerun(aiProvider, effort !== runEffort ? effort : null)}
                   disabled={facts.running || may === false}
                   data-tip={
                     may === false
                       ? `Only ${ownerName(info?.owner)}, who uploaded it, can re-run this case`
                       : may === 'login'
                         ? 'Log in to run every check again'
-                        : aiProvider && aiProvider !== info?.ai_provider
-                          ? `Run every check again with ${aiName(aiProvider)}`
-                          : 'Run every check again'
+                        : [
+                            'Run every check again',
+                            aiProvider && aiProvider !== info?.ai_provider ? `with ${aiName(aiProvider)}` : '',
+                            nextEffort !== runEffort ? `at ${EFFORT_LABEL[nextEffort]} effort` : '',
+                          ]
+                            .filter(Boolean)
+                            .join(' ')
                   }
                   aria-label="Rerun"
                 >

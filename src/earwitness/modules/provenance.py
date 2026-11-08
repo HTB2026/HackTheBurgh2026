@@ -109,10 +109,8 @@ def _parse_time(value: str | None) -> datetime | None:
     return parsed if parsed.tzinfo else parsed.replace(tzinfo=timezone.utc)
 
 
-def sun_position(
-    when: datetime, latitude: float, longitude: float
-) -> tuple[float, float]:
-    """Solar elevation and azimuth in degrees (NOAA approximation, ~0.5°)."""
+def _solar_terms(when: datetime) -> tuple[float, float, float]:
+    """(declination in radians, equation of time in minutes, UTC hour) at ``when``."""
     utc = when.astimezone(timezone.utc)
     day = utc.timetuple().tm_yday
     hour = utc.hour + utc.minute / 60 + utc.second / 3600
@@ -126,6 +124,23 @@ def sun_position(
         - 0.006758 * math.cos(2 * gamma) + 0.000907 * math.sin(2 * gamma)
         - 0.002697 * math.cos(3 * gamma) + 0.00148 * math.sin(3 * gamma)
     )  # fmt: skip
+
+    return declination, equation, hour
+
+
+def subsolar_point(when: datetime) -> tuple[float, float]:
+    """Where on Earth the sun is straight overhead at ``when`` (lat, lon in degrees)."""
+    declination, equation, hour = _solar_terms(when)
+    longitude = (720 - hour * 60 - equation) / 4
+
+    return math.degrees(declination), (longitude + 180) % 360 - 180
+
+
+def sun_position(
+    when: datetime, latitude: float, longitude: float
+) -> tuple[float, float]:
+    """Solar elevation and azimuth in degrees (NOAA approximation, ~0.5°)."""
+    declination, equation, hour = _solar_terms(when)
     true_solar = hour * 60 + equation + 4 * longitude
     hour_angle = math.radians(true_solar / 4 - 180)
     lat = math.radians(latitude)

@@ -434,6 +434,12 @@ const EXPLAIN: Record<string, string> = {
   'geo:map': 'Where the clues in the picture point. The circle shows how uncertain the estimate is.',
   'geo:intake': 'The working notes of the location search for one frame.',
   'geo:frame': 'A frame the location search examined.',
+  'geo:ref': 'A real-world reference picture the location search compared with the frames: a Wikipedia photo of a landmark, a satellite view, or a photo someone took near the candidate place.',
+  'geo:inventory': 'A Deep run first lists every clue a geolocation expert reads in the frames, including the ones that work where there is no text: poles, road lines, walls, crops, soil, terrain, sun and stars.',
+  'geo:deep': 'What each extra method of a Deep run found, or why it could not be used.',
+  'geo:skyline': 'The skyline the terrain would show from this place, rendered from an elevation model, compared with the skyline in the frames. A close match supports the place; trees and buildings can hide the terrain, so a poor match proves nothing.',
+  'geo:region': 'The wider area around the best guess, given to a second round that looks for the exact spot.',
+  'geo:quarter': 'A quarter of a frame at full size, so small details stay readable.',
   // ---- still photographs
   'provenance:tags': 'Every label stored inside the file, exactly as the camera or app wrote it: EXIF, XMP, IPTC, ICC and text chunks.',
   'provenance:clocks': 'Every clock the file carries. A camera writes them all within a second of each other; editors leave later ones.',
