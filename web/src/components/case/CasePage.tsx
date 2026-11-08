@@ -388,7 +388,7 @@ function VerdictLine({ state, facts, conn }: { state: CaseState; facts: Facts; c
     <section className="verdict-block">
       <p className={`verdict-line v-${facts.verdict}`}>{facts.summary ?? VERDICT[facts.verdict].line}</p>
       <p className="muted">
-        {flagged} {flagged === 1 ? 'thing' : 'things'} worth checking · {passed} {passed === 1 ? 'check' : 'checks'} passed
+        {flagged ? `${flagged} to look at · ${passed} passed` : `All ${passed} ${passed === 1 ? 'check' : 'checks'} passed`}
         {unfinished && conn !== 'live' ? ` · ${unfinished} unfinished` : ''}
       </p>
     </section>

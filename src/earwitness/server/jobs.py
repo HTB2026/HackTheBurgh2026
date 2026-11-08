@@ -66,6 +66,10 @@ class Case:
             ),
             {},
         )
+        where = next(
+            (a for a in brief.get("answers") or [] if a.get("key") == "where"), None
+        )
+        located = where is not None and where.get("confidence") != "unknown"
 
         return {
             "id": self.id,
@@ -78,6 +82,8 @@ class Case:
             "case": case_event["case"] if case_event else None,
             "verdict": brief.get("verdict"),
             "summary_plain": brief.get("summary_plain"),
+            "place": where["answer"] if located else None,
+            "place_confidence": where["confidence"] if located else None,
         }
 
 

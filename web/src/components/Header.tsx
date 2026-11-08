@@ -21,8 +21,7 @@ export function Header({ route }: { route: string }) {
   const auth = useAuth()
   const nav = [
     { href: '#/', key: 'home', label: 'Cases', icon: 'folder-open', accent: 'blue' },
-    { href: '#/examine', key: 'examine', label: 'Examine', icon: 'magnifying-glass', accent: 'red' },
-    { href: '#/how', key: 'how', label: 'How it works', icon: 'circle-question', accent: 'green' },
+    { href: '#/examine', key: 'examine', label: 'Locate', icon: 'location-crosshairs', accent: 'red' },
   ]
   return (
     <header className="top">

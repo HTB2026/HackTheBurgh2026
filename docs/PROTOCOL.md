@@ -9,7 +9,7 @@ built SPA (`web/dist`) is served by the same server at `/`. In dev, Vite proxies
 | Method | Path | Body / query | Returns |
 |---|---|---|---|
 | GET | `/api/health` | | `{ok, openai: bool, modules: [{name,title,description}]}` |
-| GET | `/api/cases` | | `[CaseSummary]`, newest first (includes `verdict`, `summary_plain` once the brief exists) |
+| GET | `/api/cases` | | `[CaseSummary]`, newest first (includes `verdict`, `summary_plain`, and `place` / `place_confidence` (the plain "where" answer, null when unknown) once the brief exists) |
 | POST | `/api/cases` | multipart `file`; optional query `approx_time` (ISO), `search_hours` | `CaseSummary` (analysis starts immediately) |
 | POST | `/api/cases/from-path` | JSON `{path, options?}` (a file on the server machine) | `CaseSummary` |
 | GET | `/api/cases/{id}` | | `{summary: CaseSummary, events: [Event]}` (full replay) |

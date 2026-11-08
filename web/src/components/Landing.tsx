@@ -2,9 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, uploadEvidence } from '../lib/api'
 import type { CaseSummary } from '../lib/types'
 import { ago, dateShort, mmss } from '../lib/format'
-import { useHealth } from '../lib/health'
 import { useCaseMeta } from '../lib/caseMeta'
-import { modulePlain, VERDICT, verdictOf, type Verdict } from '../lib/plain'
+import { VERDICT, verdictOf, type Verdict } from '../lib/plain'
 import { Alert, Empty, Icon, Redacted, SectionTitle } from './ui/ui'
 
 function toIso(local: string): string | null {
@@ -67,6 +66,9 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
           <a href={`#/case/${c.id}`}>{c.filename}</a>
         </h4>
         <p className="muted small mono">{c.id}</p>
+        <p className={`card-place ${c.place ? `conf-${c.place_confidence}` : 'none'}`} data-tip={c.place ? `Where it was taken (${c.place_confidence} evidence)` : undefined}>
+          <Icon name="location-dot" /> {c.place ?? (c.status === 'done' ? 'Location unknown' : 'Locating…')}
+        </p>
         {summary && <p className="card-summary">{summary}</p>}
         <div className="card-meta">
           {c.case?.image ? (
@@ -109,7 +111,6 @@ function CaseCard({ c, verdict: v, summary, onDelete }: { c: CaseSummary; verdic
 }
 
 export function Landing({ examine }: { examine?: boolean }) {
-  const { health, offline } = useHealth()
   const [cases, setCases] = useState<CaseSummary[] | null>(null)
   // Newer backends put the verdict in the list; only older cases (and the hero waveform) need their events fetched.
   const needMeta = useMemo(() => (cases ? cases.filter((c, i) => i === 0 || c.verdict === undefined) : null), [cases])
@@ -209,13 +210,14 @@ export function Landing({ examine }: { examine?: boolean }) {
   const known = cases ? cases.map(verdictFor).filter(Boolean) : []
   const edits = known.filter((v) => v === 'edited').length
   const suspect = known.filter((v) => v === 'possible').length
+  const located = cases ? cases.filter((c) => c.place).length : 0
 
   return (
     <main className="wrap home-page">
       {over && (
         <div className="drop-overlay">
           <Icon name="file-video" />
-          <b>Drop to examine</b>
+          <b>Drop to locate</b>
         </div>
       )}
       <input
@@ -233,13 +235,14 @@ export function Landing({ examine }: { examine?: boolean }) {
       <section className="hero" style={latest?.case?.thumb_url ? { backgroundImage: `url(${latest.case.thumb_url})` } : undefined}>
         <div className="hero-inner">
           <div className="hero-text">
-            <h1>Every photo and video is a witness.</h1>
+            <h1>Find where any photo or video was taken.</h1>
             <p>
-              Drop in any video or photograph. We'll tell you where it was taken, when, on what, who is in it, and what the file isn't telling you.
+              Drop in a photo or video. We work out the location from GPS, street signs, landmarks and scenery, and check it against reference and satellite
+              photos. We also check when it was taken and whether it was edited or made by AI.
             </p>
             <div className="hero-actions">
               <button className="btn btn-red" onClick={() => fileInput.current?.click()} disabled={!!upload}>
-                <Icon name="magnifying-glass" /> Examine a video or photo
+                <Icon name="location-crosshairs" /> Locate a photo or video
               </button>
               <a className="btn dark" href="#/how">
                 <Icon name="circle-question" /> How it works
@@ -260,6 +263,11 @@ export function Landing({ examine }: { examine?: boolean }) {
           <b>{cases ? cases.length : '…'}</b>
           Cases examined
         </div>
+        <div className="c-green" data-tip="Cases where GPS, a caption or the picture itself narrowed down the location">
+          <Icon name="location-dot" />
+          <b>{cases ? located : '…'}</b>
+          Places found
+        </div>
         <div className="c-red" data-tip="Cases whose verdict is Edited (independent checks agree)">
           <Icon name="scissors" />
           <b>
@@ -268,20 +276,13 @@ export function Landing({ examine }: { examine?: boolean }) {
           </b>
           Edits caught
         </div>
-        <div className="c-teal" data-tip="Independent checks: one set for video, one for photographs">
-          <Icon name="list-check" />
-          <b>
-            {health ? health.modules.length : offline ? '—' : '…'}
-            {health?.image_modules ? <small> + {health.image_modules.length} for photos</small> : null}
-          </b>
-          Checks per video
-        </div>
+
       </div>
 
       <div className="home">
         <div className="home-main">
-          <SectionTitle icon="file-video" accent="red" small="Video, audio or a photograph (JPEG, HEIC, PNG, WebP, TIFF). Checks start straight away.">
-            Examine a video or photo
+          <SectionTitle icon="location-crosshairs" accent="red" small="A photo (JPEG, HEIC, PNG, WebP, TIFF) or a video. Checks start straight away.">
+            Locate a photo or video
           </SectionTitle>
           <div
             ref={dropRef}
@@ -353,7 +354,7 @@ export function Landing({ examine }: { examine?: boolean }) {
               ))}
             </div>
           ) : cases.length === 0 ? (
-            <Empty icon="folder-open">No cases yet. Examine a video or photo to open the first file.</Empty>
+            <Empty icon="folder-open">No cases yet. Drop in a photo or video to find where it was taken.</Empty>
           ) : (
             <div className="cards">
               {cases.map((c) => (
@@ -363,59 +364,6 @@ export function Landing({ examine }: { examine?: boolean }) {
           )}
         </div>
 
-        <aside className="home-side">
-          <SectionTitle icon="flag-checkered" accent="green">
-            Getting started
-          </SectionTitle>
-          <ul className="links panel c-green">
-            <li>
-              <button onClick={() => fileInput.current?.click()}>
-                Examine your first file <small>MP4, MOV, JPEG, HEIC, PNG…</small>
-              </button>
-            </li>
-            <li>
-              <a href="#/how">
-                What each check does <small>plain English</small>
-              </a>
-            </li>
-            <li>
-              <a href="#/how#verdict">
-                How to read a verdict <small>strong vs weak</small>
-              </a>
-            </li>
-            <li>
-              <a href="#/how#limits">
-                What it cannot prove <small>read this</small>
-              </a>
-            </li>
-          </ul>
-
-          <SectionTitle icon="eye" accent="red">
-            What it can detect
-          </SectionTitle>
-          <ul className="detect panel c-red">
-            {[...(health?.modules ?? []), ...(health?.image_modules ?? []).filter((m) => !(health?.modules ?? []).some((v) => v.name === m.name && v.title === m.title))].map((m) => {
-              const p = modulePlain(m.name, m.title)
-              return (
-                <li key={`${m.kind ?? 'video'}:${m.name}`} className={`c-${p.accent}`} data-tip={p.does}>
-                  <Icon name={p.icon} />
-                  <div>
-                    <b>
-                      {p.name}
-                      {m.kind === 'image' && <small className="kind-tag">photo</small>}
-                    </b>
-                    <span className="muted small">{p.reveals || m.description}</span>
-                  </div>
-                </li>
-              )
-            })}
-            {!health && (
-              <li>
-                <Redacted lines={4} />
-              </li>
-            )}
-          </ul>
-        </aside>
       </div>
     </main>
   )

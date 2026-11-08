@@ -98,6 +98,9 @@ export interface CaseSummary {
   warnings: number
   verdict?: string | null
   summary_plain?: string | null
+  /** The plain-English "where was it taken" answer; null when nothing narrowed it down. */
+  place?: string | null
+  place_confidence?: string | null
   case: CaseInfo | null
 }
 

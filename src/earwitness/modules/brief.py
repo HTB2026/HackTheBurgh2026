@@ -76,12 +76,12 @@ def _plain_answers(
             for f in edits
             if f.time_s is not None and at is not None and abs(f.time_s - at) > 1.5
         ]
-        answer = f"Yes. Both the picture and the sound break at {_clock(at)}: two independent signs of a cut."
+        answer = f"Yes. Picture and sound both break at {_clock(at)}."
 
         if others:
             answer += (
-                f" There {'are' if len(others) > 1 else 'is'} {len(others)} more suspicious "
-                f"spot{'s' if len(others) > 1 else ''}, first at {_clock(min(f.time_s for f in others))}."
+                f" {len(others)} more suspicious spot{'s' if len(others) > 1 else ''}, "
+                f"first at {_clock(min(f.time_s for f in others))}."
             )
 
         answers.append(
@@ -99,10 +99,10 @@ def _plain_answers(
 
         for f in edits:
             label = (
-                "the picture jumps between shots" if "cut" in f.tags
-                else "part of the image was copied and pasted" if "clone" in f.tags
-                else "the sound is out of step with the picture" if "sync" in f.tags
-                else "the sound was cut and joined"
+                "the picture jumps" if "cut" in f.tags
+                else "part of the image was copied" if "clone" in f.tags
+                else "the sound is out of sync" if "sync" in f.tags
+                else "the sound was cut"
             )  # fmt: skip
 
             if label not in kinds:
@@ -130,15 +130,13 @@ def _plain_answers(
     elif contradicted_time:
         answers.append(_answer(
             "edited", "Has this video been edited?",
-            "The picture and sound were not cut, but the date stored in the file does not match "
-            "when it was really filmed: the timestamp is wrong or was changed.",
+            "No cuts, but the date in the file is wrong or was changed.",
             "strong", contradicted_time + software[:1],
         ))  # fmt: skip
     elif software:
         answers.append(_answer(
             "edited", "Has this video been edited?",
-            "No cuts or splices found, but the file has been re-saved by other software, "
-            "so it is not the camera's original.",
+            "No cuts, but other software re-saved it, so it is not the original.",
             "moderate", software[:2],
         ))  # fmt: skip
     else:
@@ -151,7 +149,7 @@ def _plain_answers(
         ]
         answers.append(_answer(
             "edited", "Has this video been edited?",
-            "No signs of editing. The frames, sound and pixels are all consistent with one continuous recording.",
+            "No signs of editing. Looks like one continuous recording.",
             "moderate" if len(checks) >= 2 else "weak", checks[:3],
         ))  # fmt: skip
 
@@ -163,16 +161,16 @@ def _plain_answers(
     if dated:
         moment = dated[0].title.split(" to ", 1)[-1]
         how = (
-            "the flicker of the room's lights"
+            "the light flicker"
             if dated[0].title.startswith("Lighting")
-            else "the hum of the power grid in the sound"
+            else "the mains hum"
         )
-        extra = " The time written in the file is wrong." if contradicted else ""
+        extra = " The date in the file is wrong." if contradicted else ""
         answers.append(
             _answer(
                 "when",
                 "When was it filmed?",
-                f"{moment}, worked out from {how}, matched against the national grid's records.{extra}",
+                f"{moment}, from {how} matched to power grid records.{extra}",
                 "strong",
                 dated + contradicted,
             )
@@ -183,8 +181,7 @@ def _plain_answers(
             _answer(
                 "when",
                 "When was it filmed?",
-                "Unknown. The only date in the file is when this copy was saved or "
-                "downloaded, not when it was filmed.",
+                "Unknown. The file only says when this copy was saved.",
                 "unknown",
                 copy + container,
             )
@@ -206,7 +203,7 @@ def _plain_answers(
             _answer(
                 "when",
                 "When was it filmed?",
-                f"The file says {when}. This comes from the file's own label, which can be changed, so it is not proven.",
+                f"{when}, according to the file. Files can be edited, so this is not proof.",
                 "weak",
                 container + local,
             )
@@ -216,7 +213,7 @@ def _plain_answers(
             _answer(
                 "when",
                 "When was it filmed?",
-                "Not enough evidence. The file carries no date, and no time clues were found in the sound or light.",
+                "Unknown. No date in the file and no time clues in the sound or light.",
                 "unknown",
                 [],
             )
@@ -255,8 +252,7 @@ def _plain_answers(
             _answer(
                 "where",
                 "Where was it filmed?",
-                f"{place}, from GPS saved in the file. This is a re-saved copy, so the GPS "
-                "may mark where it was saved rather than filmed.",
+                f"{place}, from GPS in the file. This is a copy, so it may show where it was saved instead.",
                 "moderate",
                 gps,
             )
@@ -267,7 +263,7 @@ def _plain_answers(
             _answer(
                 "where",
                 "Where was it filmed?",
-                f"{place}, from the phone's GPS saved in the file.",
+                f"{place}, from the phone's GPS.",
                 "strong",
                 gps,
             )
@@ -277,7 +273,7 @@ def _plain_answers(
             _answer(
                 "where",
                 "Where was it filmed?",
-                f"Near postcode {postcode[0].data.get('value')}, which is readable in the picture.",
+                f"Near postcode {postcode[0].data.get('value')}, visible in the picture.",
                 "moderate",
                 postcode,
                 postcode[0].time_s,
@@ -300,25 +296,25 @@ def _plain_answers(
             place = re.sub(
                 r"^(best guess:|likely|probably|possibly)\s*", "", place, flags=re.I
             )
-            answer = f"Probably {place} ({near}), judging only from what is visible in the picture."
+            answer = f"Probably {place} ({near}), going by what is visible."
             check = guess.data.get("corroboration") or {}
 
             if check.get("agree"):
                 answer += (
-                    " Verified: it matches reference photos and satellite imagery of the place."
+                    " Matches reference and satellite photos."
                     if guess.data.get("verified")
-                    else " A second, independent AI analysis agrees."
+                    else " A second AI agrees."
                 )
             elif check:
                 other = str(check.get("second_guess") or "no location")
                 answer = (
-                    f"Uncertain. One AI analysis suggests {place}; a second "
+                    f"Uncertain. One AI says {place}; another "
                     + (
-                        "could not place it at all."
+                        "cannot place it."
                         if other.lower().startswith(("unknown", "no location"))
-                        else f"suggests {other}."
+                        else f"says {other}."
                     )
-                    + " Treat this as a lead, not an answer."
+                    + " Treat it as a lead only."
                 )
         else:
             answer = re.sub(
@@ -326,7 +322,7 @@ def _plain_answers(
                 "",
                 guess.title.removeprefix("Looks like: "),
             )
-            answer += ", judging from what is visible."
+            answer += ", going by what is visible."
 
         confidence = {"high": "moderate", "medium": "moderate"}.get(
             guess.data.get("confidence"), "weak"
@@ -337,10 +333,7 @@ def _plain_answers(
 
         # A guess spanning a continent or more is not a location.
         if float(guess.data.get("radius_km") or 0) >= 2500:
-            answer = (
-                "Not enough evidence. Nothing in the picture narrows it down "
-                "(the AI's best guess would span thousands of kilometres)."
-            )
+            answer = "Unknown. Nothing in the picture narrows it down."
             confidence = "unknown"
 
         answers.append(
@@ -356,7 +349,7 @@ def _plain_answers(
             _answer(
                 "where",
                 "Where was it filmed?",
-                f"Somewhere in {region}: the electricity there runs at the frequency we detected.",
+                f"Somewhere in {region}, going by the mains frequency.",
                 "weak",
                 grid,
             )
@@ -366,7 +359,7 @@ def _plain_answers(
             _answer(
                 "where",
                 "Where was it filmed?",
-                "Not enough evidence. No location data or recognisable clues were found.",
+                "Unknown. No location data or clues found.",
                 "unknown",
                 [],
             )
@@ -394,10 +387,10 @@ def _plain_answers(
         reliable = best.data.get("snr_db", -99) > 0
         answers.append(_answer(
             "people", "Who is in it?",
-            (f"At least {len(pulses)} face{'' if len(pulses) == 1 else 's'} clearly visible. "
-             if any("face" in f.title for f in pulses) else "Visible skin, but no face. ")
-            + (f"We can see a heartbeat of about {best.data['bpm']:.0f} beats per minute from tiny colour changes in the skin."
-               if reliable else "Heart rate could not be read reliably (movement or compression)."),
+            (f"At least {len(pulses)} face{'' if len(pulses) == 1 else 's'} visible. "
+             if any("face" in f.title for f in pulses) else "Skin visible, but no face. ")
+            + (f"Heart rate about {best.data['bpm']:.0f} bpm, read from tiny skin colour changes."
+               if reliable else "Heart rate could not be read (movement or compression)."),
             "moderate" if reliable else "weak", pulses[:3], best.time_s,
         ))  # fmt: skip
 
@@ -406,21 +399,15 @@ def _plain_answers(
 
     for f in findings:
         if "dtmf" in f.tags:
-            hidden_bits.append(
-                f"phone keypad tones spelling {f.title.split(': ', 1)[-1]}"
-            )
+            hidden_bits.append(f"keypad tones: {f.title.split(': ', 1)[-1]}")
         elif "ultrasonic" in f.tags:
             hidden_bits.append(
-                f"a high-pitched tone too high for adults to hear ({f.data.get('hz', 0) / 1000:.1f} kHz)"
+                f"a tone too high for adults to hear ({f.data.get('hz', 0) / 1000:.1f} kHz)"
             )
         elif "doppler" in f.tags:
-            hidden_bits.append(
-                "the sound of something passing by (aircraft or vehicle)"
-            )
+            hidden_bits.append("a passing aircraft or vehicle")
         elif f.title.startswith("Lights flicker"):
-            hidden_bits.append(
-                "an invisible flicker from mains-powered lights, which reveals the electricity grid"
-            )
+            hidden_bits.append("light flicker that reveals the power grid")
         else:
             continue
 
@@ -444,7 +431,7 @@ def _plain_answers(
             _answer(
                 "hidden",
                 "Anything you can't see or hear?",
-                "Nothing unusual hidden in the sound or picture.",
+                "Nothing hidden in the sound or picture.",
                 "moderate",
                 [],
             )
@@ -485,8 +472,7 @@ def _plain_answers(
             _answer(
                 "speech",
                 "What is said?",
-                f"People can be heard speaking {voices[0].data.get('language')}, but the words "
-                "cannot be made out reliably.",
+                f"People speaking {voices[0].data.get('language')}, but the words are not clear.",
                 "weak",
                 voices,
             )
@@ -590,7 +576,7 @@ def _photo_answers(
             _answer(
                 "edited",
                 "Has this photo been edited?",
-                f"This is not a camera photograph. The file itself declares it was made by an AI model ({what}).",
+                f"Not a real photo: the file says an AI model made it ({what}).",
                 "strong",
                 declared[:2],
             )
@@ -599,11 +585,11 @@ def _photo_answers(
         kinds = []
 
         for f in splices:
-            label = ("part of the picture was copied and pasted within it" if "clone" in f.tags
-                     else "the preview the camera stored shows a different picture" if "thumbnail" in f.tags
-                     else "a region was pasted in from another JPEG" if "jpeg" in f.tags or "ela" in f.tags
-                     else "a region has grain unlike the rest" if "noise" in f.tags
-                     else "a region recompresses differently")  # fmt: skip
+            label = ("part of the picture was copied" if "clone" in f.tags
+                     else "the camera's preview shows a different picture" if "thumbnail" in f.tags
+                     else "an area was pasted in" if "jpeg" in f.tags or "ela" in f.tags
+                     else "an area has different grain" if "noise" in f.tags
+                     else "an area compresses differently")  # fmt: skip
 
             if label not in kinds:
                 kinds.append(label)
@@ -644,7 +630,7 @@ def _photo_answers(
             _answer(
                 "edited",
                 "Has this photo been edited?",
-                f"It was opened and saved in {software}{steps}{when}. The pixels show no paste or clone, so the edit may be a crop, a filter or a tone adjustment.",
+                f"Saved in {software}{steps}{when}. No pasting found, so probably a crop or filter.",
                 "moderate",
                 (editors + history + modified + resized)[:4],
             )
@@ -655,22 +641,14 @@ def _photo_answers(
             _answer(
                 "edited",
                 "Has this photo been edited?",
-                (
-                    "Resized or cropped after capture, with the camera's labels kept. "
-                    if resized
-                    else ""
-                )
+                ("Resized or cropped. " if resized else "")
                 + (
                     f"Re-saved by {editors[0].title.removeprefix('Processed by ')}. "
                     if editors
                     else ""
                 )
-                + (
-                    "Its modification clock runs later than its capture clock. "
-                    if modified
-                    else ""
-                )
-                + "No paste, clone or compression inconsistency was found in the pixels.",
+                + ("Changed after it was taken. " if modified else "")
+                + "No pasting found.",
                 "moderate",
                 [f] + [x for x in editors + resized + modified if x is not f][:3],
             )
@@ -680,10 +658,9 @@ def _photo_answers(
             _answer(
                 "edited",
                 "Has this photo been edited?",
-                f"No change to the picture was found, but it was saved as a JPEG twice (an earlier save at quality about {double[0].data.get('earlier_quality')}), "
-                "so this is not the camera's original file."
+                "No changes found, but it was saved twice, so it is not the original file."
                 + (
-                    f" {len(leads)} region{'s' if len(leads) != 1 else ''} look{'s' if len(leads) == 1 else ''} different from the rest without a second trace confirming a paste; see the maps."
+                    f" {len(leads)} area{'s' if len(leads) != 1 else ''} look{'s' if len(leads) == 1 else ''} different, but nothing confirms a paste; see the maps."
                     if leads
                     else ""
                 ),
@@ -696,13 +673,13 @@ def _photo_answers(
             _answer(
                 "edited",
                 "Has this photo been edited?",
-                "No sign that the picture was changed, but this is not the camera's original file: it was re-encoded "
+                "No changes found, but an app or website re-saved it"
                 + (
-                    "and stripped of its camera labels "
+                    " and removed its camera details"
                     if any(f.title.startswith("Metadata stripped") for f in resaved)
                     else ""
                 )
-                + "by another program, website or messaging app, which hides what came before.",
+                + ", so it is not the original.",
                 "moderate",
                 resaved[:3],
             )
@@ -712,7 +689,7 @@ def _photo_answers(
             _answer(
                 "edited",
                 "Has this photo been edited?",
-                "This is a screenshot, so it was never a camera photograph. Nothing shows the screen content itself was altered after capture.",
+                "A screenshot, not a camera photo. No sign it was changed.",
                 "moderate",
                 screenshot[:1],
             )
@@ -728,15 +705,9 @@ def _photo_answers(
             _answer(
                 "edited",
                 "Has this photo been edited?",
-                "No signs of editing. The camera labels, compression, grain and pixels are all consistent with one capture saved once"
+                "No signs of editing. Looks like one photo, saved once."
                 + (
-                    " and the camera's own preview matches the picture"
-                    if thumb_ok
-                    else ""
-                )
-                + "."
-                + (
-                    f" {len(leads)} region{'s' if len(leads) != 1 else ''} look{'s' if len(leads) == 1 else ''} slightly different from the rest, which strong texture or text usually explains; the maps show where."
+                    f" {len(leads)} area{'s' if len(leads) != 1 else ''} look{'s' if len(leads) == 1 else ''} slightly different, probably texture; see the maps."
                     if leads
                     else ""
                 ),
@@ -784,11 +755,11 @@ def _photo_answers(
             _answer(
                 "synthetic",
                 "Was it made by AI?",
-                "Possibly, from the look of it alone: "
+                "Possibly, from its look alone: "
                 + likely[0]
                 .detail.split(". ")[0]
                 .removeprefix("Judging from the picture alone: ")
-                + ". The file carries no generator label.",
+                + ". The file has no AI label.",
                 "weak",
                 likely[:1],
             )
@@ -812,14 +783,8 @@ def _photo_answers(
             _answer(
                 "synthetic",
                 "Was it made by AI?",
-                ("No signs. " if none else "Nothing points to it. ")
-                + "No Content Credentials or generator labels, and the pixels carry camera-like grain and spectrum"
-                + (
-                    ", which the AI eyewitness agrees with"
-                    if opinion and not likely
-                    else ""
-                )
-                + ".",
+                ("No signs. " if none else "Nothing suggests it. ")
+                + "No AI labels, and the pixels look like a real camera's.",
                 "moderate" if none and (camera_style or maker_notes) else "weak",
                 (none + opinion)[:2],
             )
@@ -848,25 +813,21 @@ def _photo_answers(
             else taken[0].title.removeprefix("Taken ")
         )
         text += (
-            " local time"
-            if tz_known or zone
-            else " by the camera's clock (time zone unknown)"
+            " local time" if tz_known or zone else " (camera clock, time zone unknown)"
         )
         corroborated = bool(zone) or bool(maker_notes) and tz_known
         extra = ""
 
         if zone:
-            extra = " The GPS receiver's clock confirms it to the second."
+            extra = " Confirmed by the GPS clock."
         elif modified:
-            extra = f" The file was modified {modified[0].title.removeprefix('Modified ').split(' after')[0]} later."
+            extra = f" Changed {modified[0].title.removeprefix('Modified ').split(' after')[0]} later."
 
         if disagree:
-            extra += (
-                " Another clock in the file disagrees, so treat the date with care."
-            )
+            extra += " Another clock in the file disagrees, so be careful."
 
         if weather_bad:
-            extra += " The recorded weather for that place and hour does not match the picture."
+            extra += " The weather then does not match the picture."
 
         confidence = (
             "weak"
@@ -889,7 +850,7 @@ def _photo_answers(
             _answer(
                 "when",
                 "When was it taken?",
-                "Unknown. The only date in the file is when this copy was saved, not when it was taken.",
+                "Unknown. The file only says when this copy was saved.",
                 "unknown",
                 copy[:1],
             )
@@ -899,7 +860,7 @@ def _photo_answers(
             _answer(
                 "when",
                 "When was it taken?",
-                "Not enough evidence. The file carries no capture date; whoever re-saved it removed it.",
+                "Unknown. The file has no date.",
                 "unknown",
                 by_title("Metadata stripped")[:1],
             )
@@ -932,15 +893,13 @@ def _photo_answers(
             f", facing {_compass(heading)}" if isinstance(heading, (int, float)) else ""
         )
         copy_note = (
-            " This copy was re-saved, so check that the GPS was not added afterwards."
-            if copy
-            else ""
+            " This is a copy, so the GPS may have been added later." if copy else ""
         )
         answers.append(
             _answer(
                 "where",
                 "Where was it taken?",
-                f"{place}{facing}: the phone wrote its GPS position into the file.{copy_note}",
+                f"{place}{facing}, from the phone's GPS.{copy_note}",
                 "moderate" if copy else "strong",
                 gps[:1],
             )
@@ -956,7 +915,7 @@ def _photo_answers(
                 _answer(
                     "where",
                     "Where was it taken?",
-                    "Not enough evidence. Nothing in the picture narrows it down.",
+                    "Unknown. Nothing in the picture narrows it down.",
                     "unknown",
                     [guess],
                 )
@@ -966,7 +925,9 @@ def _photo_answers(
                 _answer(
                     "where",
                     "Where was it taken?",
-                    f"{'Verified against reference photos and satellite imagery' if verified else 'Probably'}: {place} (within about {radius:.0f} km), judging only from what is visible.",
+                    f"{place} (within about {radius:.0f} km). Checked against reference and satellite photos."
+                    if verified
+                    else f"Probably {place} (within about {radius:.0f} km), going by what is visible.",
                     "moderate" if verified else "weak",
                     [guess],
                 )
@@ -977,7 +938,7 @@ def _photo_answers(
                 "where",
                 "Where was it taken?",
                 caption_place[0].title.split(": ", 1)[-1]
-                + ", according to the caption fields typed into the file.",
+                + ", according to the file's caption.",
                 "moderate",
                 caption_place[:1],
             )
@@ -987,7 +948,7 @@ def _photo_answers(
             _answer(
                 "where",
                 "Where was it taken?",
-                f"Near postcode {postcode[0].data.get('value')}, which is readable in the picture.",
+                f"Near postcode {postcode[0].data.get('value')}, visible in the picture.",
                 "moderate",
                 postcode[:1],
             )
@@ -1002,7 +963,7 @@ def _photo_answers(
             _answer(
                 "where",
                 "Where was it taken?",
-                f"{answer}, judging from what is visible.",
+                f"{answer}, going by what is visible.",
                 "weak",
                 looks[:1],
             )
@@ -1014,8 +975,8 @@ def _photo_answers(
             _answer(
                 "where",
                 "Where was it taken?",
-                f"No GPS, but the phone's clock was set to UTC{offset:+g}"
-                + (f", which covers {region}" if region else "")
+                f"No GPS. The clock was set to UTC{offset:+g}"
+                + (f", which suggests {region}" if region else "")
                 + ".",
                 "weak",
                 zone[:1],
@@ -1026,7 +987,7 @@ def _photo_answers(
             _answer(
                 "where",
                 "Where was it taken?",
-                "Not enough evidence. No GPS in the file and no recognisable clues in the picture.",
+                "Unknown. No GPS and no clues in the picture.",
                 "unknown",
                 [],
             )
@@ -1091,9 +1052,9 @@ def _photo_answers(
             _answer(
                 "people",
                 "Who is in it?",
-                f"{total} face{'s' if total != 1 else ''}, {recognisable} large and sharp enough to recognise."
+                f"{total} face{'s' if total != 1 else ''}, {recognisable} clear enough to recognise."
                 if recognisable
-                else f"{total} face{'s' if total != 1 else ''}, none sharp enough to recognise.",
+                else f"{total} face{'s' if total != 1 else ''}, none clear enough to recognise.",
                 "moderate",
                 counted[:1],
             )
@@ -1124,7 +1085,7 @@ def _photo_answers(
             _answer(
                 "hidden",
                 "Anything hidden in the file?",
-                "Nothing beyond the picture: no appended data, no hidden message, no personal details in the labels.",
+                "Nothing hidden: no extra data, secret message or personal details.",
                 "moderate",
                 by_title("Nothing hidden")[:1],
             )
@@ -1282,7 +1243,8 @@ def _summary_plain(answers: list[dict[str, Any]]) -> str:
     text = edited["answer"]
 
     if when:
-        text += " Filmed " + when["answer"].split(",", 1)[0] + "."
+        verb = "Taken" if "taken" in when["question"] else "Filmed"
+        text += f" {verb} " + when["answer"].split(",", 1)[0].rstrip(".") + "."
 
     return text
 
