@@ -1,3 +1,4 @@
+import { hasLocation } from '../../lib/geo'
 import { Fragment, useMemo, useState, type ReactNode } from 'react'
 import type { Answer, Artifact, Finding } from '../../lib/types'
 import type { CaseState, ModuleState } from '../../lib/state'
@@ -342,11 +343,11 @@ export function mapPoints(state: CaseState, facts: Facts): MapPoint[] {
     if (!out.some((q) => Math.abs(q.lat - p.lat) < 1e-4 && Math.abs(q.lon - p.lon) < 1e-4 && cls(q.kind) === cls(p.kind))) out.push(p)
   }
   if (facts.gps) add({ lat: facts.gps.lat, lon: facts.gps.lon, accuracy_m: facts.gps.accuracy_m, label: 'GPS stored in the file', kind: 'gps', heading_deg: facts.gps.heading_deg ?? null })
-  for (const a of arts(state).filter((x) => x.kind === 'map')) for (const p of a.data?.points ?? []) if (isFinite(p?.lat) && isFinite(p?.lon)) add(p)
+  for (const a of arts(state).filter((x) => x.kind === 'map')) for (const p of a.data?.points ?? []) if (hasLocation(p?.lat, p?.lon, ['ai', 'inferred', 'ai-candidate'].includes(p?.kind) ? (p.accuracy_m == null ? undefined : p.accuracy_m / 1000) : undefined)) add(p)
   for (const f of state.findings) {
     const lat = f.data?.latitude
     const lon = f.data?.longitude
-    if (typeof lat === 'number' && typeof lon === 'number')
+    if (hasLocation(lat, lon, f.kind === 'inferred' ? f.data?.radius_km : undefined))
       add({ lat, lon, accuracy_m: f.data?.radius_km ? f.data.radius_km * 1000 : undefined, label: f.title, kind: f.kind === 'inferred' ? 'ai' : 'measured' })
   }
   return out

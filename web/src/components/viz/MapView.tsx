@@ -1,3 +1,4 @@
+import { hasLocation } from '../../lib/geo'
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
 import { mockName } from '../../lib/mock'
@@ -52,7 +53,7 @@ export function MapView({ points, height = 360 }: { points: MapPoint[]; height?:
   const map = useRef<L.Map | null>(null)
   const layer = useRef<L.LayerGroup | null>(null)
   const [offline, setOffline] = useState(false)
-  const pts = points.filter((p) => isFinite(p?.lat) && isFinite(p?.lon))
+  const pts = points.filter((p) => hasLocation(p?.lat, p?.lon, isAI(p) || isLead(p) ? (p.accuracy_m == null ? undefined : p.accuracy_m / 1000) : undefined))
 
   useEffect(() => {
     if (!el.current) return

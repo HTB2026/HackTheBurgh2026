@@ -1,3 +1,4 @@
+import { hasLocation } from '../../lib/geo'
 import { useState } from 'react'
 import type { Artifact, Finding } from '../../lib/types'
 import type { CaseState } from '../../lib/state'
@@ -97,7 +98,7 @@ export function GeoBoard({ state, facts, points }: { state: CaseState; facts: Fa
   const f = geoFinding(state)!
   const d = f.data ?? {}
   const cands: Candidate[] = d.candidates ?? []
-  const win = winnerIndex(d)
+  const win = hasLocation(d.latitude, d.longitude, d.radius_km) ? winnerIndex(d) : -1
   const leads = leadsFrom(state.artifacts['geo:leads'])
   const frames = state.artifactOrder
     .filter((id) => /^geo:frame\d+$/.test(id))
@@ -105,7 +106,8 @@ export function GeoBoard({ state, facts, points }: { state: CaseState; facts: Fa
     .sort((a, b) => Number(a.id.replace(/\D/g, '')) - Number(b.id.replace(/\D/g, '')))
   const [frameIdx, setFrameIdx] = useState(0)
   const clues: string = state.artifacts['geo:clues']?.data?.text ?? ''
-  const verified = !!d.verified
+  const located = hasLocation(d.latitude, d.longitude, d.radius_km)
+  const verified = located && !!d.verified
   const order = cands.map((_, i) => i).sort((a, b) => (a === win ? -1 : b === win ? 1 : (leads[b]?.match ?? -1) - (leads[a]?.match ?? -1)))
   const frame = frames[frameIdx]
 
@@ -113,21 +115,21 @@ export function GeoBoard({ state, facts, points }: { state: CaseState; facts: Fa
     <div className="geo-board">
       <div className={`gb-answer ${verified ? 'ok' : 'lead'}`}>
         <span className={`gb-stamp ${verified ? 'ok' : 'lead'}`}>
-          <Icon name={verified ? 'circle-check' : 'magnifying-glass-location'} /> {verified ? 'Verified' : 'Unverified lead'}
+          <Icon name={verified ? 'circle-check' : 'magnifying-glass-location'} /> {verified ? 'Verified' : located ? 'Unverified lead' : 'Location unknown'}
         </span>
         <div>
-          <b className="gb-place">{d.place ?? f.title}</b>
+          <b className="gb-place">{located ? (d.place ?? f.title) : 'Nothing narrows the location down'}</b>
           <div className="muted">
-            {typeof d.latitude === 'number' && (
+            {located && (
               <span className="mono">
                 {d.latitude.toFixed(5)}, {d.longitude?.toFixed(5)}
               </span>
             )}
-            {d.radius_km ? ` · within ${radiusText(d.radius_km * 1000).slice(1)}` : ''}
-            {d.confidence ? ` · ${d.confidence} confidence` : ''}
-            {typeof d.match === 'number' ? ` · ${Math.round(d.match * 100)}% match with real-world imagery` : ''}
+            {located && d.radius_km ? ` · within ${radiusText(d.radius_km * 1000).slice(1)}` : ''}
+            {located && d.confidence ? ` · ${d.confidence} confidence` : ''}
+            {located && typeof d.match === 'number' ? ` · ${Math.round(d.match * 100)}% match with real-world imagery` : ''}
           </div>
-          {typeof d.error_km === 'number' && (
+          {located && typeof d.error_km === 'number' && (
             <div className={`gb-gps ${d.error_km <= Math.max(1, d.radius_km ?? 0) ? 'ok' : 'off'}`}>
               <Icon name="location-crosshairs" /> The file’s own GPS, never shown to the AI, is {distanceText(d.error_km)} from this answer.
             </div>
@@ -162,7 +164,7 @@ export function GeoBoard({ state, facts, points }: { state: CaseState; facts: Fa
       )}
 
       <div className="gb-rows">
-        {order.map((i, rank) => {
+        {order.filter((i) => hasLocation(cands[i].latitude, cands[i].longitude, cands[i].radius_km)).map((i, rank) => {
           const c = cands[i]
           const l = leads[i]
           const isWin = i === win

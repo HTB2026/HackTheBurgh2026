@@ -19,7 +19,28 @@ export async function loadMock(name: string): Promise<CaseEvent[]> {
     .map((l) => JSON.parse(l) as CaseEvent)
   const full = new URLSearchParams(location.search).has('extras')
   if (full) events.push(...extras(events))
-  return completeShowcase(events, name, full)
+  const showcase = completeShowcase(events, name, full)
+  if (new URLSearchParams(location.search).get('geo') === 'unknown') {
+    for (const event of showcase) {
+      if (event.type === 'finding' && event.finding.module === 'geo') {
+        event.finding.title = 'Location unknown'
+        event.finding.detail = 'The AI could not narrow down the location from the available evidence.'
+        event.finding.data = { ...event.finding.data, place: 'Unknown', latitude: 0, longitude: 0, radius_km: 20000, confidence: 'low', verified: false, candidates: [{ place: 'Unknown', latitude: 0, longitude: 0, radius_km: 20000 }] }
+      }
+      if (event.type === 'artifact' && event.artifact.id === 'brief:brief' && event.artifact.data) {
+        const data = event.artifact.data
+        if (Array.isArray(data.answers)) data.answers = data.answers.map((answer: { key: string }) => answer.key === 'where' ? { ...answer, answer: 'The AI could not narrow down the location. The file contains an independent GPS position.', confidence: 'unknown' } : answer)
+        data.bullets = (data.bullets ?? []).map((bullet: string) => bullet.startsWith('WHERE:') ? 'WHERE: The AI location is unknown; independent GPS is available' : bullet)
+      }
+      if (event.type === 'artifact' && event.artifact.id === 'brief:dossier' && event.artifact.data && Array.isArray(event.artifact.data.lines)) {
+        event.artifact.data.lines = event.artifact.data.lines.map((line: { category: string }) => line.category === 'where' ? { ...line, text: 'The AI could not narrow down the location.', certainty: 'unknown' } : line)
+      }
+      if (event.type === 'artifact' && event.artifact.id === 'geo:map') {
+        event.artifact.data = { points: [{ lat: 0, lon: 0, label: 'Best guess: Unknown', accuracy_m: 20000000, kind: 'ai' }, { lat: 0, lon: 0, label: 'Lead: Unknown', accuracy_m: 20000000, kind: 'ai-candidate' }] }
+      }
+    }
+  }
+  return showcase
 }
 
 /** Synthetic events for kinds the recorded streams don't contain yet (dev aid, `&extras`). */

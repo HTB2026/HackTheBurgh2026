@@ -332,7 +332,7 @@ def _plain_answers(
             confidence = "weak"
 
         # A guess spanning a continent or more is not a location.
-        if float(guess.data.get("radius_km") or 0) >= 2500:
+        if guess.data.get("location_available") is False or float(guess.data.get("radius_km") or 0) >= 2500:
             answer = "Unknown. Nothing in the picture narrows it down."
             confidence = "unknown"
 
@@ -910,7 +910,7 @@ def _photo_answers(
         radius = float(guess.data.get("radius_km") or 0)
         verified = bool(guess.data.get("verified"))
 
-        if radius >= 2500:
+        if guess.data.get("location_available") is False or radius >= 2500:
             answers.append(
                 _answer(
                     "where",
