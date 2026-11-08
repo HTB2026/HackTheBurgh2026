@@ -3,7 +3,7 @@
   "checkpoint_id": "01M6WHAKJY1FZTHXHWMHHT395M",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 13,
+  "checkpoints_count": 15,
   "files_touched": [
     ".env.example",
     "CLAUDE.md",
@@ -33,6 +33,13 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": "/2/prompt.txt"
     }
   ],
   "token_usage": {
@@ -43,14 +50,14 @@
     "api_call_count": 33
   },
   "redaction": {
-    "replacements": 31,
+    "replacements": 38,
     "layers": {
-      "betterleaks": 3,
+      "betterleaks": 8,
       "connection_string": 0,
       "credential_key": 0,
-      "credential_value": 17,
+      "credential_value": 24,
       "credentialed_uri": 0,
-      "entropy": 14,
+      "entropy": 19,
       "key_context": 0,
       "provider_token": 0,
       "shell_stdin": 0
