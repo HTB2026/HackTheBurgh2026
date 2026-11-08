@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import L from 'leaflet'
+import { mockName } from '../../lib/mock'
+import { mockMapLayer } from '../../lib/mockMap'
 
 export interface MapPoint {
   lat: number
@@ -55,12 +57,13 @@ export function MapView({ points, height = 360 }: { points: MapPoint[]; height?:
   useEffect(() => {
     if (!el.current) return
     const m = L.map(el.current, { zoomControl: true, attributionControl: true, worldCopyJump: true, scrollWheelZoom: false })
-    const street = L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
+    const preview = !!mockName()
+    const street = preview ? mockMapLayer() : L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
       attribution: '&copy; OpenStreetMap contributors',
       maxZoom: 19,
       className: 'tiles-dark',
     })
-    const satellite = L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+    const satellite = preview ? mockMapLayer(true) : L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
       attribution: 'Tiles &copy; Esri &mdash; Source: Esri, Maxar, Earthstar Geographics, and the GIS User Community',
       maxZoom: 19,
     })

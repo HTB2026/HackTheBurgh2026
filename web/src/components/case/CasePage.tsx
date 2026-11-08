@@ -37,7 +37,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   const rf = useMemo(() => new RegionFocus(), [])
   const { health } = useHealth()
   const facts = useMemo(() => deriveFacts(state, health?.openai ?? null), [state, health?.openai])
-  const [open, setOpen] = useState<Set<SectionKey>>(new Set())
+  const [open, setOpen] = useState<Set<SectionKey>>(() => new Set(mockName() && new URLSearchParams(location.search).has('extras') ? SECTIONS : []))
   const [focus, setFocus] = useState<string | null>(null)
   const info = state.info
   const still = facts.kind === 'image'
@@ -48,6 +48,15 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   const geo = geoFinding(state)
   const dossier = state.artifacts['brief:dossier'] ?? state.artifactOrder.map((id) => state.artifacts[id]).find((a) => a.kind === 'dossier') ?? null
   const [revealing, setRevealing] = useState(false)
+
+  useEffect(() => {
+    if (!mockName()) return
+    const expand = (event: Event) => setOpen(new Set((event as CustomEvent<boolean>).detail ? SECTIONS : []))
+    const replay = () => setNonce((n) => n + 1)
+    window.addEventListener('mock-sections', expand)
+    window.addEventListener('mock-replay', replay)
+    return () => { window.removeEventListener('mock-sections', expand); window.removeEventListener('mock-replay', replay) }
+  }, [])
 
   useEffect(() => {
     if (info?.duration_s) pb.set({ duration: info.duration_s })
@@ -349,11 +358,9 @@ function CaseHead({ state, facts, caseId, onRerun }: { state: CaseState; facts: 
                 <Icon name="download" />
               </a>
             )}
-            {!mockName() && (
-              <button className="icon-btn" onClick={onRerun} disabled={facts.running} data-tip="Run every check again" aria-label="Rerun">
-                <Icon name="rotate-right" />
-              </button>
-            )}
+            <button className="icon-btn" onClick={onRerun} disabled={facts.running} data-tip="Run every check again" aria-label="Rerun">
+              <Icon name="rotate-right" />
+            </button>
           </div>
         </div>
       </div>

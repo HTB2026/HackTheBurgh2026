@@ -1,7 +1,8 @@
 import { useEffect, useReducer, useState } from 'react'
 import { emptyState, reduce } from './state'
 import type { CaseEvent } from './types'
-import { loadMock, mockName } from './mock'
+import { mockName } from './mock'
+import { api } from './api'
 
 export type Conn = 'connecting' | 'live' | 'replay' | 'closed' | 'mock'
 
@@ -18,14 +19,18 @@ export function useCaseStream(caseId: string, nonce = 0) {
     if (mock) {
       setConn('mock')
       const timers: number[] = []
-      loadMock(mock).then((events) => {
+      api.events(caseId).then(({ events }) => {
         if (cancelled) return
-        // Compress real timing into a watchable replay: 40..260 ms per event.
+        if (new URLSearchParams(location.search).has('extras') && !new URLSearchParams(location.search).has('replay') && nonce === 0) {
+          dispatch({ type: 'events', events })
+          return
+        }
+        // Compress real timing into a short preview, including reruns.
         let t = 300
         for (let i = 0; i < events.length; i++) {
           const ev = events[i]
-          const gap = i === 0 ? 0 : Math.min(260, Math.max(40, (ev.ts - events[i - 1].ts) * 300))
-          t += ev.type === 'module' && ev.status !== 'running' ? gap : gap + 60
+          const gap = i === 0 ? 0 : Math.min(80, Math.max(12, (ev.ts - events[i - 1].ts) * 30))
+          t += ev.type === 'module' && ev.status !== 'running' ? gap : gap + 15
           timers.push(window.setTimeout(() => dispatch({ type: 'events', events: [ev] }), t))
         }
       })

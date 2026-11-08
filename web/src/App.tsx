@@ -5,6 +5,7 @@ import { HowItWorks } from './components/HowItWorks'
 import { CasePage, type SectionKey } from './components/case/CasePage'
 import { TipLayer } from './components/ui/ui'
 import { loadMock, mockName } from './lib/mock'
+import { MockPreviewBar } from './components/MockPreviewBar'
 
 type Route = { page: 'home' } | { page: 'examine' } | { page: 'how' } | { page: 'case'; id: string; section?: string }
 
@@ -36,12 +37,12 @@ export function App() {
 
   useEffect(() => {
     const mock = mockName()
-    if (mock && route.page === 'home')
+    if (mock && !location.hash)
       loadMock(mock).then((evs) => {
         const first = evs[0]
-        if (first?.type === 'case') location.hash = `#/case/${first.case.id}`
+        if (first?.type === 'case' && !location.hash) location.hash = `#/case/${first.case.id}`
       })
-  }, [route.page])
+  }, [])
 
   const caseId = route.page === 'case' ? route.id : null
   const onSection = useCallback(
@@ -56,6 +57,7 @@ export function App() {
   return (
     <>
       <Header route={route.page === 'case' ? 'home' : route.page} />
+      {mockName() && <MockPreviewBar caseId={caseId} />}
       {route.page === 'case' ? (
         <CasePage key={route.id} caseId={route.id} section={route.section} onSection={onSection} />
       ) : route.page === 'how' ? (

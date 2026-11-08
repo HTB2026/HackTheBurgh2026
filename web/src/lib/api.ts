@@ -1,5 +1,6 @@
 import { authHeaders } from './auth'
-import type { CaseSummary, EnhanceResult, Health } from './types'
+import type { CaseEvent, CaseSummary, EnhanceResult, Health } from './types'
+import { isMock, mockCases, mockEnhance, mockEvents, mockFromPath, mockHealth, mockRemove, mockReportUrl, mockRerun, mockUpload } from './mockBackend'
 
 async function json<T>(res: Response): Promise<T> {
   if (!res.ok) {
@@ -16,26 +17,27 @@ async function json<T>(res: Response): Promise<T> {
 }
 
 export const api = {
-  health: () => fetch('/api/health').then((r) => json<Health>(r)),
-  cases: () => fetch('/api/cases').then((r) => json<CaseSummary[]>(r)),
+  health: () => isMock() ? mockHealth() : fetch('/api/health').then((r) => json<Health>(r)),
+  cases: () => isMock() ? mockCases() : fetch('/api/cases').then((r) => json<CaseSummary[]>(r)),
+  events: (id: string) => isMock() ? mockEvents(id) : fetch(`/api/cases/${encodeURIComponent(id)}`).then((r) => json<{ events: CaseEvent[] }>(r)),
   // Writes need an Auth0 login; authHeaders() starts one when logged out.
   fromPath: async (path: string, options: Record<string, unknown> = {}) =>
-    fetch('/api/cases/from-path', {
+    isMock() ? mockFromPath(path) : fetch('/api/cases/from-path', {
       method: 'POST',
       headers: { 'content-type': 'application/json', ...(await authHeaders()) },
       body: JSON.stringify({ path, options }),
     }).then((r) => json<CaseSummary>(r)),
   remove: async (id: string) =>
-    fetch(`/api/cases/${id}`, { method: 'DELETE', headers: await authHeaders() }).then((r) => json<{ deleted: boolean }>(r)),
+    isMock() ? mockRemove(id) : fetch(`/api/cases/${id}`, { method: 'DELETE', headers: await authHeaders() }).then((r) => json<{ deleted: boolean }>(r)),
   rerun: async (id: string) =>
-    fetch(`/api/cases/${id}/rerun`, { method: 'POST', headers: await authHeaders() }).then((r) => json<CaseSummary>(r)),
+    isMock() ? mockRerun(id) : fetch(`/api/cases/${id}/rerun`, { method: 'POST', headers: await authHeaders() }).then((r) => json<CaseSummary>(r)),
   enhance: (id: string, body: { time_s?: number; x: number; y: number; w: number; h: number; frames?: number }) =>
-    fetch(`/api/cases/${id}/enhance`, {
+    isMock() ? mockEnhance(id, body) : fetch(`/api/cases/${id}/enhance`, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
       body: JSON.stringify(body),
     }).then((r) => json<EnhanceResult>(r)),
-  reportUrl: (id: string) => `/api/cases/${id}/report`,
+  reportUrl: (id: string) => isMock() ? mockReportUrl(id) : `/api/cases/${id}/report`,
 }
 
 /** Multipart upload with progress (fetch has no upload progress). */
@@ -44,6 +46,7 @@ export async function uploadEvidence(
   approxTime: string | null,
   onProgress: (fraction: number) => void,
 ): Promise<CaseSummary> {
+  if (isMock()) return mockUpload(file, onProgress)
   const headers = await authHeaders()
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()
