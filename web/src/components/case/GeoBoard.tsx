@@ -5,8 +5,9 @@ import type { CaseState } from '../../lib/state'
 import { usePlayback } from '../../lib/playback'
 import { mmss } from '../../lib/format'
 import { Icon, Modal } from '../ui/ui'
-import { distanceText, MapView, radiusText, type MapPoint } from '../viz/MapView'
+import { distanceText, radiusText, type MapPoint } from '../viz/MapView'
 import { MapSection } from './Sections'
+import { MapOrGlobe } from './MapOrGlobe'
 import { isTerminal } from '../../lib/state'
 import type { Facts } from '../../lib/facts'
 
@@ -271,7 +272,7 @@ export function LocationHero({ state, facts, points, children }: { state: CaseSt
 
       <div className={`loc-grid ${located ? '' : 'map-only'}`}>
         <div className="loc-map">
-          {points.length ? <MapView points={points} height={340} /> : <div className="loc-map-empty">{searching ? <i className="pulse-dot big" /> : <Icon name="earth-europe" />}</div>}
+          {points.length ? <MapOrGlobe points={points} height={340} /> : <div className="loc-map-empty">{searching ? <i className="pulse-dot big" /> : <Icon name="earth-europe" />}</div>}
         </div>
         {located && (
           <div className="loc-proof">

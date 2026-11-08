@@ -675,7 +675,9 @@
 .loc-more > details > summary i { margin-right: 6px; color: var(--faint); }
 .loc-more > details[open] > summary { margin-bottom: 10px; }
 .loc-more .gb-clues { margin: 0; }
-/* The map fills its column, however tall the evidence beside it is. */
+/* The map (or globe) fills its column, however tall the evidence beside it is. */
+.loc-map .map-switchable,
+.loc-map .globe,
 .loc-map .map-wrap,
 .loc-map .map {
   height: 100% !important;
@@ -684,4 +686,10 @@
 @media (max-width: 900px) {
   .loc-hero { padding: 14px 14px 12px; }
   .loc-grid { grid-template-columns: minmax(0, 1fr); }
+}
+/* Map | Globe switch: beside Leaflet's zoom buttons, clear of its layer picker. */
+.loc-map .map-mode {
+  right: auto;
+  left: 52px;
+  top: 10px;
 }

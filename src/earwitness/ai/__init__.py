@@ -26,7 +26,7 @@ from earwitness.ai import ollama
 from earwitness.ai import openai
 
 PROVIDERS: dict[str, ModuleType] = {"openai": openai, "gemini": gemini, "ollama": ollama}
-LABELS = {"openai": "OpenAI", "gemini": "Gemini", "ollama": "Gemma"}
+LABELS = {"openai": "OpenAI", "gemini": "Gemini", "ollama": "Gemma (experimental)"}
 MISSING_KEY = "set OPENAI_API_KEY, GEMINI_API_KEY or EARWITNESS_OLLAMA_URL to enable"
 
 

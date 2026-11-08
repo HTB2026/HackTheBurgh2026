@@ -10,7 +10,8 @@ import { artifactTab, BULLET_LABEL, CONFIDENCE, GLOSSARY, modulePlain, SEVERITY,
 import { CopyButton, Icon, SevChip, SourceChip, Term } from '../ui/ui'
 import { DataView, JsonTree } from '../ui/Data'
 import { Timeline } from '../viz/Timeline'
-import { MapView, radiusText, type MapPoint } from '../viz/MapView'
+import { radiusText, type MapPoint } from '../viz/MapView'
+import { MapOrGlobe } from './MapOrGlobe'
 import { ArtifactGroup } from './Artifacts'
 
 const arts = (state: CaseState) => state.artifactOrder.map((id) => state.artifacts[id])
@@ -354,6 +355,8 @@ export function mapPoints(state: CaseState, facts: Facts): MapPoint[] {
 }
 
 export function MapSection({ points, gps, legendOnly }: { points: MapPoint[]; gps: Facts['gps']; legendOnly?: boolean }) {
+  // Clicking a row flies the globe (when this section shows the map and it is in globe view).
+  const [focus, setFocus] = useState({ index: -1, nonce: 0 })
   return (
     <>
       {gps && (
@@ -367,11 +370,11 @@ export function MapSection({ points, gps, legendOnly }: { points: MapPoint[]; gp
         yellow line joins GPS and answer.
       </p>
       <div className="map-box">
-        {!legendOnly && <MapView points={points} height={420} />}
+        {!legendOnly && <MapOrGlobe points={points} height={420} focus={focus} />}
         <table className="dtable map-legend">
           <tbody>
             {points.map((p, i) => (
-              <tr key={i}>
+              <tr key={i} className={legendOnly ? undefined : 'fly'} onClick={legendOnly ? undefined : () => setFocus((f) => ({ index: i, nonce: f.nonce + 1 }))} data-tip={legendOnly ? undefined : 'On the globe: fly there'}>
                 <td className="place">
                   <span className={`dot-k ${p.kind === 'ai-candidate' ? 'lead' : p.kind === 'ai' || p.kind === 'inferred' ? 'ai' : ''}`} /> {p.label}
                 </td>
