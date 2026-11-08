@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api, uploadEvidence } from '../lib/api'
 import { useHealth } from '../lib/health'
-import { AiPicker, aiChoices } from './AiPicker'
+import { AI_HINT, AI_LABEL, aiChoices } from './AiPicker'
 import type { AiProvider } from '../lib/types'
 import type { CaseSummary } from '../lib/types'
 import { ago, dateShort, mmss } from '../lib/format'
@@ -181,7 +181,30 @@ export function Landing({ examine }: { examine?: boolean }) {
       </section>
       <div className="home">
         <div className="home-main">
-          <AiPicker health={health} value={aiChosen} onChange={pickAi} />
+          {choices.length > 1 && (
+            <div className="ai-choice" role="radiogroup" aria-label="AI model">
+              <span className="ai-choice-label">
+                <Icon name="robot" /> AI model
+              </span>
+              <div className="tabs ai-tabs">
+                {choices.map((p) => (
+                  <button
+                    key={p}
+                    type="button"
+                    role="radio"
+                    aria-checked={aiChosen === p}
+                    className={aiChosen === p ? 'active' : ''}
+                    disabled={!!upload}
+                    data-tip={AI_HINT[p]}
+                    onClick={() => pickAi(p)}
+                  >
+                    {AI_LABEL[p] ?? p}
+                  </button>
+                ))}
+              </div>
+              <small className="faint">Runs speech, sounds, the visual analyst, geolocation and the written summary.</small>
+            </div>
+          )}
           <div
             ref={dropRef}
             className={`dropzone ${upload ? 'busy' : ''}`}
