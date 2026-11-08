@@ -9,6 +9,8 @@ export interface ModuleInfo {
   title: string
   description: string
   kind?: MediaKind
+  /** The lowest effort level that runs this check (absent on older servers: every level). */
+  min_effort?: Effort
 }
 
 export interface VideoInfo {

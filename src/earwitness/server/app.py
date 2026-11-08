@@ -113,7 +113,14 @@ def _case(case_id: str):
 @app.get("/api/health")
 async def health() -> dict[str, Any]:
     describe = lambda kind: [  # noqa: E731
-        {"name": m.name, "title": m.title, "description": m.description, "kind": kind}
+        {
+            "name": m.name,
+            "title": m.title,
+            "description": m.description,
+            "kind": kind,
+            # The lowest effort level that runs it (low: every level).
+            "min_effort": getattr(m, "min_effort", "low"),
+        }
         for m in registry.all_modules(kind)
     ]
 

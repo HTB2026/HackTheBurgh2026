@@ -410,3 +410,77 @@
 .effort-stops button.on b { font-weight: 600; }
 .effort-stops button:hover:not(:disabled) { color: var(--text); }
 .effort-hint { flex: 1 1 260px; max-width: 560px; }
+
+/* How it works: effort levels */
+.how { --lvl-low: var(--blue-2); --lvl-medium: #9b59d0; --lvl-high: var(--red); }
+.how .lvl-low { --lvl: var(--lvl-low); }
+.how .lvl-medium { --lvl: var(--lvl-medium); }
+.how .lvl-high { --lvl: var(--lvl-high); }
+.how-lead { margin: -4px 0 14px; max-width: 820px; }
+.effort-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(240px, 100%), 1fr));
+  gap: 14px;
+  margin-bottom: 14px;
+}
+.effort-card {
+  padding: 14px 18px;
+  border-top: 3px solid var(--lvl);
+  display: grid;
+  gap: 4px;
+}
+.effort-card b { font-size: 16px; }
+.effort-card span { font-size: 12.5px; }
+.effort-card p { margin-top: 4px; color: var(--muted); font-size: 14px; }
+.effort-table-wrap { overflow-x: auto; padding: 4px 0; }
+.effort-table { width: 100%; border-collapse: collapse; font-size: 14px; }
+.effort-table th, .effort-table td { padding: 9px 16px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); }
+.effort-table tbody tr:last-child > * { border-bottom: 0; }
+.effort-table thead th { font-weight: 600; color: var(--muted); font-size: 13px; }
+.effort-table thead th[class^='lvl-'] { color: var(--text); border-bottom: 2px solid var(--lvl); text-align: center; width: 15%; }
+.effort-table tbody th { font-weight: 500; }
+.effort-table tbody th small { display: block; margin-top: 2px; color: var(--muted); font-weight: 400; font-size: 12.5px; }
+.effort-table:not(.sources) td { text-align: center; }
+.effort-table tr.group th { padding-top: 16px; color: var(--muted); font-size: 12.5px; font-weight: 600; text-transform: none; letter-spacing: 0; }
+.effort-table tr.group th i { margin-right: 6px; }
+.effort-table .mark-yes { color: var(--lvl); font-size: 15px; }
+.effort-table .mark-no { color: var(--muted); opacity: 0.5; }
+.effort-table .mark-text { color: var(--text); font-size: 13px; }
+.effort-table.sources td, .effort-table.sources th { font-size: 13.5px; }
+.mode-chips { display: inline-flex; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.mode-chip {
+  font-size: 11px;
+  font-weight: 600;
+  padding: 1px 8px;
+  border-radius: 999px;
+  border: 1px solid color-mix(in srgb, var(--lvl, var(--muted)) 60%, transparent);
+  color: color-mix(in srgb, var(--lvl, var(--muted)) 75%, var(--text));
+  background: color-mix(in srgb, var(--lvl, var(--muted)) 12%, transparent);
+  white-space: nowrap;
+}
+.mode-chip.all { --lvl: var(--muted); }
+.how-card header { flex-wrap: wrap; }
+.how-deeper { font-size: 13px; color: var(--muted); border-top: 1px dashed var(--line); padding-top: 8px; }
+.how-deeper i { color: var(--lvl-high); margin-right: 4px; }
+.how-note { margin-top: 12px; font-size: 13.5px; }
+
+/* How it finds where: numbered steps, Deep-only ones marked */
+.how-steps { list-style: none; padding: 0; margin: 0 0 8px; display: grid; gap: 10px; }
+.how-steps li { display: flex; gap: 16px; padding: 14px 18px; align-items: flex-start; }
+.how-steps li.deep-only { border-left: 3px solid var(--lvl-high); }
+.how-step-n {
+  flex: 0 0 28px;
+  height: 28px;
+  border-radius: 50%;
+  display: grid;
+  place-items: center;
+  font-weight: 600;
+  font-size: 13px;
+  background: var(--panel-2);
+  border: 1px solid var(--line);
+}
+.how-steps li > div { flex: 1; display: grid; gap: 4px; }
+.how-steps header { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.how-steps header i { color: var(--muted); }
+.how-steps h3 { font-size: 15.5px; font-weight: 600; }
+.how-steps p { color: var(--muted); font-size: 14px; }

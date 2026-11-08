@@ -9,6 +9,7 @@ const videoNames = ['provenance', 'timeline', 'spectrum', 'enf', 'light', 'pulse
 const photoNames = ['provenance', 'jpeg', 'tamper', 'hidden', 'faces', 'synthetic', 'ocr', 'vision', 'geo', 'weather', 'brief']
 export const mockModules = (kind: MediaKind): ModuleInfo[] => (kind === 'image' ? photoNames : videoNames).map((name) => ({
   name, kind, title: MODULES[name]?.name.toUpperCase() ?? name.toUpperCase(), description: MODULES[name]?.does ?? '',
+  ...(name === 'pulse' ? { min_effort: 'medium' as const } : {}),
 }))
 
 /** Recorded measurements plus explicitly synthetic UI examples. No backend URLs survive. */
