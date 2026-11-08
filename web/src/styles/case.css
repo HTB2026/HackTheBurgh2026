@@ -1976,3 +1976,81 @@ td.lb-title > * {
   background: color-mix(in srgb, var(--link) 10%, transparent);
 }
 .badge-link { color: inherit; text-decoration: none; }
+
+/* JPEG ghost legend and copy finder (WebGPU photo tools) */
+.ghost-legend {
+  position: absolute;
+  left: 10px;
+  bottom: 34px;
+  z-index: 4;
+  width: 270px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.72);
+  font-size: 11.5px;
+  color: #ddd;
+}
+.ghost-bar {
+  display: flex;
+  height: 8px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.ghost-bar span {
+  flex: 1;
+}
+.ghost-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 2px;
+  font-size: 10px;
+  color: #aaa;
+}
+.ghost-note {
+  margin-top: 4px;
+  line-height: 1.35;
+}
+.copy-box {
+  position: absolute;
+  border: 2px solid #ff4fd8;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.6), 0 0 12px rgb(255 79 216 / 0.6);
+  pointer-events: none;
+}
+.copy-box.source {
+  border: 2px dashed #38d6ff;
+  box-shadow: 0 0 0 1px rgb(0 0 0 / 0.6);
+}
+.copy-tag {
+  position: absolute;
+  top: -18px;
+  left: -2px;
+  padding: 0 4px;
+  border-radius: 3px;
+  background: #ff4fd8;
+  color: #000;
+  font: 600 10.5px/16px 'JetBrains Mono', monospace;
+  white-space: nowrap;
+}
+.copy-box.source .copy-tag {
+  background: #38d6ff;
+}
+.copy-status {
+  position: absolute;
+  left: 50%;
+  top: 10px;
+  transform: translateX(-50%);
+  z-index: 4;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: min(640px, 90%);
+  padding: 6px 8px 6px 12px;
+  border-radius: 6px;
+  background: rgb(0 0 0 / 0.78);
+  border: 1px solid #ff4fd8;
+  font-size: 12px;
+  color: #eee;
+}
+.copy-status.err {
+  border-color: var(--red);
+}

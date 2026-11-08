@@ -164,6 +164,112 @@ fn filters(@builtin(global_invocation_id) gid: vec3u) {
   }
   textureStore(dst, p, vec4f(res, 1.0));
 }
+
+// ---- JPEG ghost: the quality each 8x8 block was last saved at -------------------------
+// A block decoded from a JPEG saved at quality q0 has luma DCT coefficients that sit on q0's
+// quantisation grid. For each candidate quality: actual requantisation error divided by what an
+// unrelated block would give (min(F^2, Q^2/12) per coefficient). The best-fitting quality, if it
+// fits well, is the block's estimate. Pass 1 (ghost) estimates and counts; pass 2 (ghostPaint)
+// finds the picture's dominant quality from the counts and colours the blocks that disagree.
+@group(0) @binding(3) var<storage, read_write> hist: array<atomic<u32>>;   // GHOST_LEVELS + "none"
+@group(0) @binding(4) var<storage, read_write> blockQ: array<u32>;         // estimate per block
+
+const GHOST_LEVELS = 39u;     // 30, 35, ..., 65, then every quality 70..100
+var<workgroup> fy: array<f32, 64>;
+var<workgroup> ratio: array<f32, 64>;
+var<workgroup> blockEnergy: f32;
+var<workgroup> clipped: atomic<u32>;
+
+fn ghostQuality(k: u32) -> f32 { return select(70.0 + f32(k - 8u), 30.0 + 5.0 * f32(k), k < 8u); }
+
+// Hue by quality: red (30) through yellow and green to blue (100).
+fn ghostColour(q: f32) -> vec3f {
+  let h = clamp((q - 30.0) / 70.0, 0.0, 1.0) * 4.0;
+  return clamp(vec3f(abs(h - 3.0) - 1.0, 2.0 - abs(h - 2.0), 2.0 - abs(h - 4.0)), vec3f(0.0), vec3f(1.0)) * 0.85 + 0.15;
+}
+
+@compute @workgroup_size(8, 8)
+fn ghost(@builtin(workgroup_id) wg: vec3u, @builtin(local_invocation_id) lid: vec3u, @builtin(num_workgroups) nwg: vec3u) {
+  let p = vec2i(wg.xy * 8u + lid.xy);
+  let i = lid.y * 8u + lid.x;
+  let px = rgb255(p);
+  tile[i] = vec3f(luma(px) - 128.0, 0.0, 0.0);
+  // Pixels clipped at 0 or 255 have been pushed off the JPEG grid: such blocks are not evidence.
+  if (i == 0u) { atomicStore(&clipped, 0u); }
+  workgroupBarrier();
+  if (min(px.r, min(px.g, px.b)) <= 1.0 || max(px.r, max(px.g, px.b)) >= 254.0) { atomicOr(&clipped, 1u); }
+  workgroupBarrier();
+
+  var sum = 0.0;
+  for (var yy = 0u; yy < 8u; yy++) {
+    let cy = cos((2.0 * f32(yy) + 1.0) * f32(lid.y) * PI / 16.0);
+    for (var xx = 0u; xx < 8u; xx++) {
+      sum += tile[yy * 8u + xx].x * cos((2.0 * f32(xx) + 1.0) * f32(lid.x) * PI / 16.0) * cy;
+    }
+  }
+  fy[i] = 0.25 * cu(lid.x) * cu(lid.y) * sum;
+  workgroupBarrier();
+
+  if (i < GHOST_LEVELS) {
+    let s = qscale(ghostQuality(i));
+    var err = 0.0;
+    var rnd = 0.0;
+    for (var c = 0u; c < 64u; c++) {
+      let q = quant(QY[c], s);
+      let f = fy[c];
+      let d = f - round(f / q) * q;
+      err += d * d;
+      rnd += min(f * f, q * q / 12.0);
+    }
+    ratio[i] = err / (rnd + 1e-3);
+  }
+  if (i == 63u) {
+    var ac = 0.0;
+    for (var c = 1u; c < 64u; c++) { ac += fy[c] * fy[c]; }
+    blockEnergy = ac;
+  }
+  workgroupBarrier();
+
+  if (i == 0u) {
+    // Best fit, if it fits well; near-flat blocks carry no evidence either way.
+    var k = GHOST_LEVELS;
+    if (blockEnergy > 50.0 && atomicLoad(&clipped) == 0u) {
+      var bestK = 0u;
+      for (var j = 1u; j < GHOST_LEVELS; j++) { if (ratio[j] < ratio[bestK]) { bestK = j; } }
+      if (ratio[bestK] < 0.35) { k = bestK; }
+    }
+    let size = vec2u(textureDimensions(src));
+    if (wg.x * 8u < size.x && wg.y * 8u < size.y) {
+      blockQ[wg.y * nwg.x + wg.x] = k;
+      atomicAdd(&hist[k], 1u);
+    }
+  }
+}
+
+@compute @workgroup_size(8, 8)
+fn ghostPaint(@builtin(global_invocation_id) gid: vec3u) {
+  let size = vec2u(textureDimensions(src));
+  if (gid.x >= size.x || gid.y >= size.y) { return; }
+  var dom = 0u;
+  var domN = 0u;
+  for (var k = 0u; k < GHOST_LEVELS; k++) {
+    let n = atomicLoad(&hist[k]);
+    if (n > domN) { domN = n; dom = k; }
+  }
+  let blocksX = (size.x + 7u) / 8u;
+  let k = blockQ[(gid.y / 8u) * blocksX + gid.x / 8u];
+  let y = luma(rgb255(vec2i(gid.xy))) / 255.0;
+  var c = vec3f(y * 0.28);
+  if (k < GHOST_LEVELS) {
+    let q = ghostQuality(k);
+    if (abs(q - ghostQuality(dom)) <= 1.0) {
+      c = vec3f(y * 0.5);            // agrees with the rest of the picture
+    } else {
+      c = mix(vec3f(y * 0.5), ghostColour(q), 0.85);   // a different save quality
+    }
+  }
+  textureStore(dst, vec2i(gid.xy), vec4f(c, 1.0));
+}
 `
 
 /** Render pass: draw the forensic map through the viewer's pan/zoom onto a stage-sized canvas. */
