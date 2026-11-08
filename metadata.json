@@ -3,12 +3,16 @@
   "checkpoint_id": "01M6WC51964DSZDDXQTQP4S4S5",
   "strategy": "manual-commit",
   "branch": "main",
-  "checkpoints_count": 16,
+  "checkpoints_count": 18,
   "files_touched": [
     "docs/PROTOCOL.md",
     "src/earwitness/modules/brief.py",
     "src/earwitness/server/jobs.py",
-    "web/src/components/case/CasePage.tsx"
+    "web/src/components/Header.tsx",
+    "web/src/components/Landing.tsx",
+    "web/src/components/case/CasePage.tsx",
+    "web/src/lib/types.ts",
+    "web/src/styles/home.css"
   ],
   "sessions": [
     {
@@ -24,14 +28,21 @@
       "compact_transcript": "/1/transcript.jsonl",
       "content_hash": "/1/content_hash.txt",
       "prompt": "/1/prompt.txt"
+    },
+    {
+      "metadata": "/2/metadata.json",
+      "transcript": "/2/full.jsonl",
+      "compact_transcript": "/2/transcript.jsonl",
+      "content_hash": "/2/content_hash.txt",
+      "prompt": "/2/prompt.txt"
     }
   ],
   "token_usage": {
-    "input_tokens": 350,
-    "cache_creation_tokens": 256298,
-    "cache_read_tokens": 36229692,
-    "output_tokens": 140628,
-    "api_call_count": 154,
+    "input_tokens": 428,
+    "cache_creation_tokens": 333800,
+    "cache_read_tokens": 38878940,
+    "output_tokens": 160429,
+    "api_call_count": 190,
     "subagent_tokens": {
       "input_tokens": 24,
       "cache_creation_tokens": 109599,

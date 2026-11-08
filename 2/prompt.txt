@@ -1,0 +1,13 @@
+remove this button [Image #1] remove this sidebar on the home page and make the feed take the whole page [Image #2]
+
+---
+
+Can you simplify these [Image #3] and the summaries [Image #4]
+
+---
+
+also phrase the home page in the context of working out geolocation PRIMARILY! The ai/cut detection is secondary
+
+---
+
+commit, merge all prs and push to prod and remote
