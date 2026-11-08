@@ -1,0 +1,161 @@
+how do we get better in rural areas
+
+---
+
+Do all of these. You have these [Image #1] [Image #2] [Image #3]
+
+---
+
+Apply to videos too
+
+---
+
+<task-notification>
+<task-id>b6o61w5qh</task-id>
+<tool-use-id>toolu_01FCSRfdJshf8AZ7RiDPvTdy</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-relesto-Downloads-earwitness/7e5cc9e3-7146-44ad-9e7e-0fdaee8e1914/tasks/b6o61w5qh.output</output-file>
+<status>completed</status>
+<summary>Background command "Run skyline matching over real Commons photos in background" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bojcbimq4</task-id>
+<summary>Monitor event: "evaluation progress (files started, geo results, errors)"</summary>
+<event>... fire.png</event>
+</task-notification>
+
+---
+
+the vps will be restarted rn to upgrade
+
+---
+
+<task-notification>
+<task-id>bojcbimq4</task-id>
+<summary>Monitor event: "evaluation progress (files started, geo results, errors)"</summary>
+<event>... moor.mp4</event>
+</task-notification>
+
+---
+
+I have mapillary token 
+
+<pasted_content id="70a4">
+The full evaluation isn't finished yet: the moor, fields, McEwan Hall and London Eye runs are still going. So this is based on what's been measured so far.
+
+## Results by component
+
+| Part | What the evidence shows | Verdict |
+|---|---|---|
+| **Rural prompts** (poles, walls, field patterns; regions not cities; hills and lochs count as landmarks) | Lane photo now gets plausible European candidates with honest low confidence. Fire still found Holyrood Park without a named landmark in view. | Helps, but only 2 data points |
+| **Wide satellite view** | Fetched for every candidate, including wide guesses that used to get none. | Works; benefit not measured on its own |
+| **OpenStreetMap check** | Correctly confirmed crags, paths and grassland for the Holyrood candidate. Overpass is slow (20–40 s) and sometimes fails (502s, timeouts); one candidate came back "unavailable". | Useful but unreliable; it now has a time limit, so it can't stall a case |
+| **Nearby ground-level photos** (Commons/Geograph) | Probably the main reason the fire still was located: photos 24 m and 64 m from the guess. Fast (~3 s). Coverage outside the UK will be thinner. | The strongest new rural signal so far |
+| **Mapillary** | Not tested: there is no token yet. | Unknown |
+| **Skyline vs elevation data** | Synthetic tests: recovers the spot to within 5–25 m and the heading to within 1°, and rejects wrong places. Real Commons hill photos (about 20 run): no confident match anywhere and no false match either. None of your 3 rural files had a usable skyline. | Safe but rarely decisive; mainly a visual for the demo |
+| **Wikipedia User-Agent fix** | The old User-Agent got a 403, so the landmark-photo check was very likely failing silently on prod. | A real fix that could help city cases too |
+
+## Overall
+
+- **Proven:** the pipeline runs end to end on photos and videos. It refuses the skyline check correctly when there's no clear sky. It located a no-landmark rural/park scene correctly at high confidence. The new tests pass and the existing suite still passes.
+- **Not proven:**
+  - No accuracy number for rural files, because I don't have the true locations of the lane, moor and fields files.
+  - No before/after comparison on the same inputs.
+  - The London Eye and McEwan Hall regression results aren't back yet.
+- **Speed is a concern.** The lane case's geo step took about 6 minutes locally, mostly the old one-at-a-time Overpass queries plus verification with many images. The parallel version should cut that, but it hasn't been timed. On the 2-core VPS, the skyline search adds more CPU time.
+
+## Before calling it done
+
+1. Give the true locations for the lane, moor and fields files, so the error can be reported in km.
+2. Wait for the McEwan Hall and London Eye results to confirm city answers didn't get worse.
+3. Time one case with the parallel lookups, ideally on the VPS once it's back.
+4. Optionally, add a Mapillary token and rerun the lane photo, which is the case with the least context.
+</pasted_content id="70a4">
+
+---
+
+I have mapillary token MLY|29629454566660949|35f08add82e61548eb18bc6b323d99fc with secret MLY|29629454566660949|9ff9eb235df66a5be482fb632926caab
+
+---
+
+alo vps back up
+
+---
+
+are the new tests deployed on prod?
+
+---
+
+<task-notification>
+<task-id>bz01anjlw</task-id>
+<tool-use-id>toolu_01RaAk4DMHXJFp8iTj3ibr9p</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-relesto-Downloads-earwitness/7e5cc9e3-7146-44ad-9e7e-0fdaee8e1914/tasks/bz01anjlw.output</output-file>
+<status>completed</status>
+<summary>Background command "Rerun synthetic recovery and terrain tests" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bp34vickz</task-id>
+<tool-use-id>toolu_01RhRbzodi67GFQRGLMmq5tt</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-relesto-Downloads-earwitness/7e5cc9e3-7146-44ad-9e7e-0fdaee8e1914/tasks/bp34vickz.output</output-file>
+<status>failed</status>
+<summary>Background command "Run the full suite on rural and regression files" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bauptc5ly</task-id>
+<tool-use-id>toolu_014pQPeaQg8tY9ASdEtwrwDU</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-relesto-Downloads-earwitness/7e5cc9e3-7146-44ad-9e7e-0fdaee8e1914/tasks/bauptc5ly.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait until the moor video case starts" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bhz3eyhnb</task-id>
+<tool-use-id>toolu_01LTNSmQj6CuEB14hqjeLS7V</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-relesto-Downloads-earwitness/7e5cc9e3-7146-44ad-9e7e-0fdaee8e1914/tasks/bhz3eyhnb.output</output-file>
+<status>failed</status>
+<summary>Background command "Wait for moor video and show its geo result" failed with exit code 144</summary>
+</task-notification>
+
+---
+
+SOmewhere in germany, bavaria near wurzburg
+
+---
+
+no, https://earwitness.ussr.pl/#/case/20261107-233142-e20cca . The one with the sheep is south of edinburgh
+
+---
+
+and then can you adversally review this whole pipeline
+
+---
+
+isnt this better btw https://github.com/Oldcircle/geo-sleuth
+
+---
+
+<task-notification>
+<task-id>bpgdfg291</task-id>
+<tool-use-id>toolu_01X6Tm9h4gDZG2bEXZ4cfxvq</tool-use-id>
+<output-file>/private/tmp/claude-501/-Users-relesto-Downloads-earwitness/7e5cc9e3-7146-44ad-9e7e-0fdaee8e1914/tasks/bpgdfg291.output</output-file>
+<status>completed</status>
+<summary>Background command "Wait for lane rerun and show its result" completed (exit code 0)</summary>
+</task-notification>
+
+---
+
+<task-notification>
+<task-id>bojcbimq4</task-id>
+<summary>Monitor event: "evaluation progress (files started, geo results, errors)"</summary>
+<event>[Monitor expired after 30m with 2 events delivered. Re-arm it if you still need the watch.]</event>
+</task-notification>
