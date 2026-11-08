@@ -7,6 +7,7 @@ import { isTerminal } from '../../lib/state'
 import { api } from '../../lib/api'
 import { deriveFacts, type Facts } from '../../lib/facts'
 import { useHealth } from '../../lib/health'
+import { CaseMediaContext } from '../../lib/media'
 import { canChange, ownerName, useAuth } from '../../lib/auth'
 import { ago, dateShort, mmss } from '../../lib/format'
 import { mediaNoun, modulePlain, VERDICT } from '../../lib/plain'
@@ -51,6 +52,10 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
   const geo = geoFinding(state)
   const dossier = state.artifacts['brief:dossier'] ?? state.artifactOrder.map((id) => state.artifacts[id]).find((a) => a.kind === 'dossier') ?? null
   const [revealing, setRevealing] = useState(false)
+  const media = useMemo(
+    () => ({ mediaUrl: state.mediaUrl ?? null, originalUrl: info?.original_url ?? null, fps: info?.video?.fps ?? null, duration: info?.duration_s ?? 0 }),
+    [state.mediaUrl, info?.original_url, info?.video?.fps, info?.duration_s],
+  )
 
   useEffect(() => {
     if (info?.duration_s) pb.set({ duration: info.duration_s })
@@ -100,6 +105,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
 
   return (
     <PlaybackContext.Provider value={pb}>
+      <CaseMediaContext.Provider value={media}>
       <RegionContext.Provider value={rf}>
         <MediaKindContext.Provider value={facts.kind}>
           <CaseHead
@@ -238,6 +244,7 @@ export function CasePage({ caseId, section, onSection }: { caseId: string; secti
           )}
         </MediaKindContext.Provider>
       </RegionContext.Provider>
+      </CaseMediaContext.Provider>
     </PlaybackContext.Provider>
   )
 }

@@ -5,27 +5,46 @@ import { usePlayback, usePlayhead } from '../../lib/playback'
 import { niceTicks, num } from '../../lib/format'
 import { useGpu } from '../../lib/gpu'
 import { Waterfall } from './Waterfall'
+import { LiveSpectrogram, type LiveSpec } from './LiveSpectrogram'
 
 const fmtHz = (f: number) => (f >= 1000 ? `${+(f / 1000).toFixed(1)}k` : `${Math.round(f)}`)
+
+type Mode = '2d' | 'live' | '3d'
+const MODE_LABEL: Record<Mode, string> = { '2d': 'Image', live: 'Live', '3d': '3D' }
+const MODE_TIP: Record<Mode, string> = {
+  '2d': 'The spectrogram computed on the server',
+  live: 'Computed on your GPU from the soundtrack: pick any band (e.g. mains hum) and window, real dB, strongest-frequency trace',
+  '3d': 'Loudness as height: drag to turn, scroll to zoom. Uses the Live view when you have opened it (real dB)',
+}
 
 export function Spectrogram({ a, height = 240 }: { a: Artifact; height?: number }) {
   const gpuState = useGpu()
   const gpu = gpuState === 'loading' ? null : gpuState
-  const [mode, setMode] = useState<'2d' | '3d'>('2d')
+  const [mode, setMode] = useState<Mode>('2d')
+  const [live, setLive] = useState<LiveSpec | null>(null)
   const switcher = gpu && a.url && (
     <div className="tabs spec-mode" role="radiogroup" aria-label="Spectrogram view">
-      {(['2d', '3d'] as const).map((m) => (
-        <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)} data-tip={m === '3d' ? 'Loudness as height: drag to turn, scroll to zoom (WebGPU)' : 'Flat view'}>
-          {m.toUpperCase()}
+      {(['2d', 'live', '3d'] as const).map((m) => (
+        <button key={m} type="button" role="radio" aria-checked={mode === m} className={mode === m ? 'active' : ''} onClick={() => setMode(m)} data-tip={MODE_TIP[m]}>
+          {MODE_LABEL[m]}
         </button>
       ))}
     </div>
   )
+  if (gpu && mode === 'live') {
+    return (
+      <div className="chart spec-live">
+        {switcher}
+        <LiveSpectrogram gpu={gpu} a={a} height={height + 40} onResult={setLive} />
+      </div>
+    )
+  }
   if (gpu && mode === '3d') {
+    const source = live ? { texture: live.result.texture, t0: live.result.t0, t1: live.result.t1, f0: live.f0, f1: live.f1 } : null
     return (
       <div className="chart spec-3d">
         {switcher}
-        <Waterfall gpu={gpu} a={a} height={Math.max(320, height + 120)} />
+        <Waterfall gpu={gpu} a={a} height={Math.max(320, height + 120)} source={source} />
       </div>
     )
   }

@@ -2054,3 +2054,38 @@ td.lb-title > * {
 .copy-status.err {
   border-color: var(--red);
 }
+
+/* Live GPU spectrogram */
+.live-spec-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 12px;
+  margin: 2px 150px 6px 0;
+}
+.live-spec-plot {
+  position: relative;
+  width: 100%;
+}
+.live-spec-plot svg {
+  position: absolute;
+  inset: 0;
+}
+.live-spec-canvas {
+  position: absolute;
+  display: block;
+}
+.peak-trace {
+  fill: none;
+  stroke: #38d6ff;
+  stroke-width: 1.4;
+  opacity: 0.9;
+  pointer-events: none;
+}
+.live-spec-note {
+  position: absolute;
+  right: 12px;
+  top: 12px;
+  font-size: 11px;
+  pointer-events: none;
+}

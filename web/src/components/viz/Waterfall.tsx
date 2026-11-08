@@ -39,15 +39,24 @@ function resources(gpu: Gpu): Res {
 }
 
 /** The spectrogram as a lit 3D terrain: loudness is height. Drag to orbit, wheel to zoom. */
-export function Waterfall({ gpu, a, height }: { gpu: Gpu; a: Artifact; height: number }) {
+/** A ready texture to show instead of the artifact's PNG (the live GPU spectrogram: real dB). */
+export interface WaterfallSource {
+  texture: GPUTexture
+  t0: number
+  t1: number
+  f0: number
+  f1: number
+}
+
+export function Waterfall({ gpu, a, height, source }: { gpu: Gpu; a: Artifact; height: number; source?: WaterfallSource | null }) {
   const { ref, ctx, size } = useGpuCanvas(gpu)
   const pb = usePlayback()
   const playhead = usePlayhead()
   const d = a.data ?? {}
-  const t0: number = d.t0 ?? 0
-  const t1: number = d.t1 ?? (pb.duration || 1)
-  const f0: number = d.f0 ?? 0
-  const f1: number = d.f1 ?? 1
+  const t0: number = source?.t0 ?? d.t0 ?? 0
+  const t1: number = source?.t1 ?? d.t1 ?? (pb.duration || 1)
+  const f0: number = source?.f0 ?? d.f0 ?? 0
+  const f1: number = source?.f1 ?? d.f1 ?? 1
   const [cam, setCam] = useState(HOME)
   const [hover, setHover] = useState<{ u: number; v: number; x: number; y: number } | null>(null)
   const [tex, setTex] = useState<{ bind: GPUBindGroup; texture: GPUTexture } | null>(null)
@@ -56,8 +65,24 @@ export function Waterfall({ gpu, a, height }: { gpu: Gpu; a: Artifact; height: n
   const drag = useRef<{ x: number; y: number; yaw: number; pitch: number; moved: boolean } | null>(null)
   const viewProj = useRef<Float32Array | null>(null)
 
+  // A live texture from the GPU spectrogram (owned by the caller).
   useEffect(() => {
-    if (!a.url) return
+    if (!source) return
+    const R = resources(gpu)
+    const bind = gpu.device.createBindGroup({
+      layout: R.pipeline.getBindGroupLayout(0),
+      entries: [
+        { binding: 0, resource: source.texture.createView() },
+        { binding: 1, resource: R.sampler },
+        { binding: 2, resource: { buffer: R.uniforms } },
+      ],
+    })
+    setTex({ bind, texture: source.texture })
+    return () => setTex(null)
+  }, [gpu, source])
+
+  useEffect(() => {
+    if (!a.url || source) return
     let live = true
     let made: GPUTexture | null = null
     textureFromUrl(gpu.device, a.url)
@@ -81,7 +106,7 @@ export function Waterfall({ gpu, a, height }: { gpu: Gpu; a: Artifact; height: n
       made?.destroy()
       setTex(null)
     }
-  }, [gpu, a.url])
+  }, [gpu, a.url, source])
 
   const eye = (): Vec3 => {
     const cp = Math.cos(cam.pitch)
