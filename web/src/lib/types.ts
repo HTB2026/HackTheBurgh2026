@@ -224,6 +224,27 @@ export interface EnhanceResult {
   lenses?: Lens[]
 }
 
+/**
+ * Every box a finding points at. A finding about several things (the faces check lists each
+ * face in data.faces) gives one box per item, labelled; otherwise its single box, if any.
+ */
+export function boxesOf(f: { data?: unknown } | null | undefined): { box: Box; label: string | null; tip: string | null }[] {
+  const d = (f as { data?: Record<string, unknown> } | null | undefined)?.data
+  const items = Array.isArray(d?.faces) ? (d!.faces as { box?: unknown; index?: number; recognisable?: boolean }[]) : []
+  const many = items
+    .map((it, i) => ({ box: boxOf({ data: { box: it.box } }), n: it.index ?? i + 1, recognisable: it.recognisable }))
+    .filter((x): x is { box: Box; n: number; recognisable: boolean | undefined } => x.box != null)
+  if (many.length) {
+    return many.map((x) => ({
+      box: x.box,
+      label: String(x.n),
+      tip: `Face ${x.n}${x.recognisable === true ? ', recognisable' : x.recognisable === false ? ', not recognisable' : ''}`,
+    }))
+  }
+  const one = boxOf(f)
+  return one ? [{ box: one, label: null, tip: null }] : []
+}
+
 /** The box a finding points at, if it has one (still pictures). */
 export function boxOf(f: { data?: unknown } | null | undefined): Box | null {
   const d = (f as { data?: Record<string, unknown> } | null | undefined)?.data
